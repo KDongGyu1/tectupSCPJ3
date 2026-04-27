@@ -21,17 +21,18 @@ C:\project\tectupSCPJ3
 │       └── backend.tf                 # 상태 파일 저장 위치
 │
 ├── modules/                           # 재사용 가능한 인프라 모듈
-│   ├── vpc/                           # VPC, 서브넷, IGW, NAT GW, 라우팅 테이블
-│   ├── security-group/                # 보안 그룹 (ALB, App, DB)
-│   ├── iam/                           # IAM 역할, 정책, Permission Set
-│   ├── kms/                           # KMS 암호화 키
-│   ├── s3/                            # S3 버킷, 암호화, Object Lock
-│   ├── rds/                           # RDS PostgreSQL, Multi-AZ
-│   ├── ec2/                           # EC2 Launch Template, Auto Scaling Group
-│   ├── alb/                           # Application Load Balancer, Target Group
-│   ├── cloudtrail/                    # CloudTrail 로그 수집
-│   ├── cloudwatch/                    # CloudWatch 로그 그룹, 알람
-│   └── lambda/                        # Lambda 함수 (Auto Remediation)
+│   ├── vpc/                    # VPC, 서브넷, IGW, NAT GW, 라우팅, VPC Flow Logs
+│   ├── security-group/         # 보안 그룹 (ALB, App, DB)
+│   ├── iam/                    # IAM 역할, 정책, Identity Center, Permission Set
+│   ├── kms/                    # KMS CMK, Secrets Manager
+│   ├── s3/                     # S3 버킷, 암호화, Object Lock
+│   ├── rds/                    # RDS PostgreSQL, Multi-AZ
+│   ├── ec2/                    # EC2 Launch Template, Auto Scaling Group
+│   ├── alb/                    # ALB, Target Group, ACM, WAF (선택)
+│   ├── cloudtrail/             # CloudTrail 로그 수집
+│   ├── cloudwatch/             # CloudWatch Logs, Alarms, SNS, EventBridge
+│   ├── lambda/                 # Lambda 함수 (Auto Remediation)
+│   └── security-monitoring/    # AWS Config, GuardDuty, Security Hub
 │
 └── docs/                              # 프로젝트 문서
     ├── architecture.md                # 아키텍처 설계 문서
