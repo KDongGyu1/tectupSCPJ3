@@ -1,0 +1,16 @@
+variable "name_prefix" { type = string }
+variable "environment" { type = string }
+variable "vpc_id" { type = string }
+variable "public_subnet_ids" { type = list(string) }
+variable "app_subnet_ids" { type = list(string) }
+variable "alb_sg_id" { type = string }
+variable "app_sg_id" { type = string }
+variable "app_instance_profile_name" { type = string }
+variable "logs_kms_key_arn" { type = string }
+variable "central_logs_bucket" { type = string }
+variable "enable_alb_access_logs" { type = bool }
+variable "alb_certificate_arn" { type = string }
+variable "app_instance_type" { type = string }
+variable "app_desired_capacity" { type = number }
+variable "app_min_size" { type = number }
+variable "app_max_size" { type = number }
