@@ -16,6 +16,24 @@ variable "aws_region" {
   default     = "ap-northeast-2"
 }
 
+variable "aws_profile" {
+  description = "Optional local AWS CLI profile to use as the source credentials."
+  type        = string
+  default     = ""
+}
+
+variable "assume_role_arn" {
+  description = "Optional AWS IAM role ARN for Terraform to assume before creating resources."
+  type        = string
+  default     = ""
+}
+
+variable "assume_role_session_name" {
+  description = "Session name used when assume_role_arn is set."
+  type        = string
+  default     = "finpay-terraform"
+}
+
 variable "vpc_cidr" {
   description = "VPC CIDR."
   type        = string
