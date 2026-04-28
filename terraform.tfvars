@@ -1,0 +1,31 @@
+project_name = "finpay"
+environment  = "dev"
+aws_region   = "ap-northeast-2"
+
+aws_profile              = "default"
+assume_role_arn          = "arn:aws:iam::064137889010:role/Fintech-Admin-Role"
+assume_role_session_name = "finpay-terraform"
+
+vpc_cidr            = "10.0.0.0/16"
+az_names            = ["ap-northeast-2a", "ap-northeast-2c"]
+public_subnet_cidrs = ["10.0.0.0/24", "10.0.1.0/24"]
+app_subnet_cidrs    = ["10.0.10.0/24", "10.0.11.0/24"]
+db_subnet_cidrs     = ["10.0.20.0/24", "10.0.21.0/24"]
+
+allowed_http_cidr_blocks = ["0.0.0.0/0"]
+alb_certificate_arn      = ""
+
+app_instance_type    = "t3.micro"
+app_desired_capacity = 1
+app_min_size         = 1
+app_max_size         = 2
+
+db_instance_class = "db.t4g.micro"
+db_name           = "finpay"
+alert_email       = ""
+
+enable_alb_access_logs      = false
+enable_guardduty            = false
+enable_securityhub          = false
+enable_aws_config           = false
+rds_backup_retention_period = 1
