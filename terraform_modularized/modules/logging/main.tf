@@ -28,7 +28,7 @@ resource "aws_s3_bucket_object_lock_configuration" "central_logs" {
 
   rule {
     default_retention {
-      mode = "COMPLIANCE"
+      mode = "GOVERNANCE"
       days = var.log_object_lock_retention_days
     }
   }
