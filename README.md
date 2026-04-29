@@ -1,34 +1,48 @@
-# FinPay Full AWS Security Architecture
+# FinPay AWS Security Architecture
 
-This Terraform stack implements the `gpt draw.io.drawio` architecture end to end:
+FinPay AWS Security Architecture is a Terraform project for a secure fintech-style workload on AWS.
 
-- VPC `10.0.0.0/16`
-- 2 AZ design in Seoul: `ap-northeast-2a`, `ap-northeast-2c`
-- Public, private app, and isolated DB subnet tiers
-- Internet Gateway, one NAT Gateway per AZ, public/app/db route tables
-- S3 Gateway endpoint plus interface endpoints for KMS, Secrets Manager, CloudWatch Logs, SSM, EC2 Messages, and SSM Messages
-- ALB, WAF, and three private EC2 Auto Scaling Groups
-- Cognito app user authentication with MFA and RBAC groups
-- Optional IAM Identity Center note: this stack creates IAM roles for operations/security/audit; Identity Center assignment is normally managed at the organization level
+## Repository Layout
+
+```text
+.
+├── main.tf                   # Module composition
+├── variables.tf              # Input variables
+├── terraform.tfvars.example  # Safe example values
+├── modules/                  # Reusable Terraform modules
+└── docs/                     # Architecture and security notes
+```
+
+Use the repository root for Terraform work.
+
+## What It Builds
+
+- VPC across two Seoul AZs: `ap-northeast-2a`, `ap-northeast-2c`
+- Public, private app, and isolated database subnet tiers
+- Internet Gateway, NAT Gateways, route tables, and VPC endpoints
+- ALB, WAF, and private EC2 Auto Scaling Groups
+- Cognito authentication with MFA-oriented configuration
 - RDS PostgreSQL Multi-AZ with AWS-managed master secret
-- KMS CMKs, Secrets Manager, CloudTrail, VPC Flow Logs, CloudWatch Logs
-- S3 central log bucket with Object Lock Compliance retention
-- AWS Config, GuardDuty, Security Hub
-- AWS Backup plan for RDS
-- EventBridge monthly audit report Lambda and SNS email alerting
+- KMS keys, Secrets Manager, CloudTrail, VPC Flow Logs, and CloudWatch Logs
+- Central S3 log bucket with Object Lock retention
+- Optional AWS Config, GuardDuty, and Security Hub controls
+- AWS Backup plan and EventBridge/Lambda audit automation
 
 ## Quick Start
 
 ```bash
-cd iac-full
+cp terraform.tfvars.example terraform.tfvars
 terraform init
 terraform plan
-terraform apply
 ```
 
-The default plan creates real AWS resources that may incur cost, especially NAT Gateways, EC2 ASGs, RDS, and VPC endpoints.
+Run `terraform apply` only after reviewing cost and account limits.
 
-For accounts with Free Tier or security service subscription limits, the default values keep the following optional controls disabled:
+## Cost And Account Notes
+
+This stack can create billable AWS resources, especially NAT Gateways, EC2 Auto Scaling Groups, RDS, VPC endpoints, AWS Backup, and security services.
+
+The example values keep expensive or account-sensitive options disabled by default:
 
 ```hcl
 enable_guardduty           = false
@@ -38,12 +52,10 @@ enable_alb_access_logs     = false
 rds_backup_retention_period = 1
 ```
 
-Turn GuardDuty, Security Hub, and AWS Config on only after your AWS account can subscribe to those services and deliver logs to the selected S3/KMS policy. ALB access logs are disabled by default because ALB log delivery can reject central buckets with stricter Object Lock/KMS settings; CloudTrail and VPC Flow Logs still remain enabled.
+Enable GuardDuty, Security Hub, AWS Config, and ALB access logs only after confirming the target AWS account supports the required service subscriptions, delivery policies, and KMS/S3 settings.
 
-For HTTPS on the ALB, provide an ACM certificate ARN:
+## Working Rules
 
-```bash
-terraform apply -var='alb_certificate_arn=arn:aws:acm:ap-northeast-2:123456789012:certificate/xxxx'
-```
-
-Without `alb_certificate_arn`, the stack exposes HTTP port 80 so it remains deployable from scratch without a domain.
+- Do not commit `terraform.tfvars`, `*.tfstate`, plan files, or build artifacts.
+- Add new Terraform resources through `modules/` when they belong to a reusable component.
+- Update `docs/` when architecture, security controls, or operating assumptions change.

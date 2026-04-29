@@ -30,3 +30,4 @@ enable_guardduty           = false
 enable_securityhub         = false
 enable_aws_config          = false
 rds_backup_retention_period = 1
+log_object_lock_retention_days = 365

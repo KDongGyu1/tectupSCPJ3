@@ -1,0 +1,44 @@
+##################################
+# macOS
+##################################
+.DS_Store
+
+##################################
+# Terraform
+##################################
+.terraform/
+**/.terraform/
+
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+crash.log
+crash.*.log
+.terraformrc
+terraform.rc
+
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+*.tfplan
+*.tfplan.json
+**/.terraform-build/
+
+##################################
+# Local workspace
+##################################
+.local/
+.env
+.env.*
+
+##################################
+# Editors
+##################################
+.vscode/
+.idea/
+*.swp
