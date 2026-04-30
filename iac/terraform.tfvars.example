@@ -1,0 +1,16 @@
+project_name = "finpay"
+environment  = "dev"
+aws_region   = "ap-northeast-2"
+
+vpc_id             = "vpc-xxxxxxxx"
+private_subnet_ids = ["subnet-private-a", "subnet-private-c"]
+public_subnet_ids  = ["subnet-public-a", "subnet-public-c"]
+
+create_rds   = false
+create_redis = false
+
+pg_endpoint_url      = "https://pg.example.com"
+bank_endpoint_url    = "https://bank.example.com"
+fiu_endpoint_url     = "https://fiu.example.com"
+dispute_endpoint_url = "https://dispute.example.com"
+alert_email          = ""
