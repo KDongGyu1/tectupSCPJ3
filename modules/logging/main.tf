@@ -1,5 +1,5 @@
 resource "aws_s3_bucket" "central_logs" {
-  bucket              = "${var.name_prefix}-central-logs-${var.account_id}"
+  bucket              = "${var.name_prefix}-logs-${var.account_id}"
   force_destroy       = true
   object_lock_enabled = true
 }
