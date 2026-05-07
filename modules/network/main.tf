@@ -83,9 +83,9 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  for_each = aws_subnet.public
+  for_each = local.az_map
 
-  subnet_id      = each.value.id
+  subnet_id      = aws_subnet.public[each.key].id
   route_table_id = aws_route_table.public.id
 }
 
@@ -103,9 +103,9 @@ resource "aws_route_table" "app" {
 }
 
 resource "aws_route_table_association" "app" {
-  for_each = aws_subnet.app
+  for_each = local.az_map
 
-  subnet_id      = each.value.id
+  subnet_id      = aws_subnet.app[each.key].id
   route_table_id = aws_route_table.app[each.key].id
 }
 
@@ -115,9 +115,9 @@ resource "aws_route_table" "db" {
 }
 
 resource "aws_route_table_association" "db" {
-  for_each = aws_subnet.db
+  for_each = local.az_map
 
-  subnet_id      = each.value.id
+  subnet_id      = aws_subnet.db[each.key].id
   route_table_id = aws_route_table.db.id
 }
 

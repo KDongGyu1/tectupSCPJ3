@@ -24,7 +24,7 @@ Use the repository root for Terraform work.
 - Cognito authentication with MFA-oriented configuration
 - RDS PostgreSQL Multi-AZ with AWS-managed master secret
 - KMS keys, Secrets Manager, CloudTrail, VPC Flow Logs, and CloudWatch Logs
-- Central S3 log bucket with Object Lock retention
+- Central S3 log bucket with optional Object Lock retention
 - Optional AWS Config, GuardDuty, and Security Hub controls
 - AWS Backup plan and EventBridge/Lambda audit automation
 
@@ -49,10 +49,12 @@ enable_guardduty           = false
 enable_securityhub         = false
 enable_aws_config          = false
 enable_alb_access_logs     = false
+enable_log_object_lock     = false
 rds_backup_retention_period = 1
 ```
 
 Enable GuardDuty, Security Hub, AWS Config, and ALB access logs only after confirming the target AWS account supports the required service subscriptions, delivery policies, and KMS/S3 settings.
+Keep `enable_log_object_lock = false` while repeatedly running `terraform destroy` and `terraform apply`; turn it on only when you intentionally need immutable log retention.
 
 ## Working Rules
 

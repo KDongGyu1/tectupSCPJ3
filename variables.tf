@@ -148,6 +148,12 @@ variable "rds_backup_retention_period" {
   default     = 1
 }
 
+variable "enable_log_object_lock" {
+  description = "Enable default S3 Object Lock retention on the central log bucket. Keep false for repeatable dev destroy/apply cycles."
+  type        = bool
+  default     = false
+}
+
 variable "log_object_lock_retention_days" {
   description = "Central log bucket Object Lock retention days."
   type        = number

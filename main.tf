@@ -48,6 +48,7 @@ module "logging" {
   account_id                     = data.aws_caller_identity.current.account_id
   vpc_id                         = module.network.vpc_id
   logs_kms_key_arn               = module.kms.logs_kms_key_arn
+  enable_log_object_lock         = var.enable_log_object_lock
   log_object_lock_retention_days = var.log_object_lock_retention_days
 }
 
