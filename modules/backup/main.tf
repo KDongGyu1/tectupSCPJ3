@@ -1,7 +1,6 @@
 resource "aws_backup_vault" "main" {
-  name          = "${var.name_prefix}-backup-vault"
-  kms_key_arn   = var.main_kms_key_arn
-  force_destroy = true
+  name        = "${var.name_prefix}-backup-vault"
+  kms_key_arn = var.main_kms_key_arn
 }
 
 resource "aws_backup_plan" "main" {

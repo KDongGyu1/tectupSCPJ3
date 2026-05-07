@@ -10,6 +10,180 @@ resource "aws_sns_topic_subscription" "email" {
   endpoint  = var.alert_email
 }
 
+data "aws_caller_identity" "current" {}
+
+resource "aws_sns_topic_policy" "alerts" {
+  arn = aws_sns_topic.alerts.arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowAccountTopicAdministration"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action = [
+          "sns:GetTopicAttributes",
+          "sns:SetTopicAttributes",
+          "sns:AddPermission",
+          "sns:RemovePermission",
+          "sns:DeleteTopic",
+          "sns:Subscribe",
+          "sns:ListSubscriptionsByTopic",
+          "sns:Publish"
+        ]
+        Resource = aws_sns_topic.alerts.arn
+      },
+      {
+        Sid    = "AllowMonitoringServicesPublish"
+        Effect = "Allow"
+        Principal = {
+          Service = [
+            "events.amazonaws.com",
+            "cloudwatch.amazonaws.com"
+          ]
+        }
+        Action   = "sns:Publish"
+        Resource = aws_sns_topic.alerts.arn
+      }
+    ]
+  })
+}
+
+locals {
+  security_monitoring_event_rules = {
+    root_account_activity = {
+      description = "Alert when the AWS root account is used."
+      event_pattern = jsonencode({
+        "detail-type" = [
+          "AWS API Call via CloudTrail",
+          "AWS Console Sign In via CloudTrail"
+        ]
+        detail = {
+          userIdentity = {
+            type = ["Root"]
+          }
+        }
+      })
+    }
+
+    console_login_failure = {
+      description = "Alert on failed AWS console login attempts."
+      event_pattern = jsonencode({
+        source        = ["aws.signin"]
+        "detail-type" = ["AWS Console Sign In via CloudTrail"]
+        detail = {
+          eventName = ["ConsoleLogin"]
+          responseElements = {
+            ConsoleLogin = ["Failure"]
+          }
+        }
+      })
+    }
+
+    unauthorized_api_call = {
+      description = "Alert on access denied and unauthorized API activity."
+      event_pattern = jsonencode({
+        "detail-type" = ["AWS API Call via CloudTrail"]
+        detail = {
+          errorCode = [
+            { prefix = "AccessDenied" },
+            { prefix = "UnauthorizedOperation" }
+          ]
+        }
+      })
+    }
+
+    cloudtrail_tampering = {
+      description = "Alert when CloudTrail logging or event selectors are changed."
+      event_pattern = jsonencode({
+        source        = ["aws.cloudtrail"]
+        "detail-type" = ["AWS API Call via CloudTrail"]
+        detail = {
+          eventSource = ["cloudtrail.amazonaws.com"]
+          eventName = [
+            "DeleteTrail",
+            "StopLogging",
+            "UpdateTrail",
+            "PutEventSelectors"
+          ]
+        }
+      })
+    }
+
+    iam_policy_change = {
+      description = "Alert on IAM identity, role, access key, and policy changes."
+      event_pattern = jsonencode({
+        source        = ["aws.iam"]
+        "detail-type" = ["AWS API Call via CloudTrail"]
+        detail = {
+          eventSource = ["iam.amazonaws.com"]
+          eventName = [
+            "AttachRolePolicy",
+            "AttachUserPolicy",
+            "CreateAccessKey",
+            "CreatePolicy",
+            "CreatePolicyVersion",
+            "CreateRole",
+            "CreateUser",
+            "DeleteAccessKey",
+            "DeletePolicy",
+            "DeletePolicyVersion",
+            "DeleteRole",
+            "DeleteUser",
+            "DetachRolePolicy",
+            "DetachUserPolicy",
+            "PutRolePolicy",
+            "PutUserPolicy",
+            "UpdateAssumeRolePolicy"
+          ]
+        }
+      })
+    }
+
+    security_group_change = {
+      description = "Alert on Security Group rule and boundary changes."
+      event_pattern = jsonencode({
+        source        = ["aws.ec2"]
+        "detail-type" = ["AWS API Call via CloudTrail"]
+        detail = {
+          eventSource = ["ec2.amazonaws.com"]
+          eventName = [
+            "AuthorizeSecurityGroupIngress",
+            "AuthorizeSecurityGroupEgress",
+            "CreateSecurityGroup",
+            "DeleteSecurityGroup",
+            "ModifySecurityGroupRules",
+            "RevokeSecurityGroupIngress",
+            "RevokeSecurityGroupEgress",
+            "UpdateSecurityGroupRuleDescriptionsIngress"
+          ]
+        }
+      })
+    }
+
+    s3_public_access_change = {
+      description = "Alert on S3 public access control and bucket policy changes."
+      event_pattern = jsonencode({
+        source        = ["aws.s3"]
+        "detail-type" = ["AWS API Call via CloudTrail"]
+        detail = {
+          eventSource = ["s3.amazonaws.com"]
+          eventName = [
+            "DeleteBucketPolicy",
+            "DeleteBucketPublicAccessBlock",
+            "PutBucketAcl",
+            "PutBucketPolicy",
+            "PutBucketPublicAccessBlock"
+          ]
+        }
+      })
+    }
+  }
+}
+
 data "archive_file" "audit_report" {
   type        = "zip"
   source_file = "${path.module}/lambda_src/audit_report.js"
@@ -105,6 +279,35 @@ resource "aws_lambda_permission" "monthly_audit" {
   source_arn    = aws_cloudwatch_event_rule.monthly_audit.arn
 }
 
+resource "aws_cloudwatch_event_rule" "security_monitoring" {
+  for_each = local.security_monitoring_event_rules
+
+  name          = "${var.name_prefix}-${replace(each.key, "_", "-")}"
+  description   = each.value.description
+  event_pattern = each.value.event_pattern
+}
+
+resource "aws_cloudwatch_event_target" "security_monitoring" {
+  for_each = local.security_monitoring_event_rules
+
+  rule      = aws_cloudwatch_event_rule.security_monitoring[each.key].name
+  target_id = "sns-alerts"
+  arn       = aws_sns_topic.alerts.arn
+
+  input_transformer {
+    input_paths = {
+      account     = "$.account"
+      detail_type = "$.detail-type"
+      event_name  = "$.detail.eventName"
+      principal   = "$.detail.userIdentity.arn"
+      region      = "$.region"
+      time        = "$.time"
+    }
+
+    input_template = "\"${var.name_prefix} security alert: <detail_type> / <event_name> in account <account>, region <region>, principal <principal>, time <time>. Review CloudTrail and related logs.\""
+  }
+}
+
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   alarm_name          = "${var.name_prefix}-alb-5xx"
   comparison_operator = "GreaterThanOrEqualToThreshold"
@@ -120,4 +323,3 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
     LoadBalancer = var.alb_arn_suffix
   }
 }
-

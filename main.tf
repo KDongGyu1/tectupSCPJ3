@@ -1,4 +1,4 @@
-data "aws_caller_identity" "current" {}
+
 
 module "kms" {
   source      = "./modules/kms"
