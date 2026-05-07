@@ -25,9 +25,9 @@ db_instance_class = "db.t4g.micro"
 db_name           = "finpay"
 alert_email       = ""
 
-enable_alb_access_logs     = false
-enable_guardduty           = false
-enable_securityhub         = false
-enable_aws_config          = false
+enable_alb_access_logs      = false
+enable_guardduty            = false
+enable_securityhub          = false
+enable_aws_config           = false
 rds_backup_retention_period = 1
 log_object_lock_retention_days = 365
