@@ -1,3 +1,9 @@
+data "aws_caller_identity" "current" {}
+
+data "aws_caller_identity" "global_events" {
+  provider = aws.global_events
+}
+
 resource "aws_sns_topic" "alerts" {
   name              = "${var.name_prefix}-alerts"
   kms_master_key_id = var.logs_kms_key_arn
@@ -8,6 +14,148 @@ resource "aws_sns_topic_subscription" "email" {
   topic_arn = aws_sns_topic.alerts.arn
   protocol  = "email"
   endpoint  = var.alert_email
+}
+
+resource "aws_sns_topic_policy" "alerts" {
+  arn = aws_sns_topic.alerts.arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowCloudWatchPublish"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudwatch.amazonaws.com"
+        }
+        Action   = "sns:Publish"
+        Resource = aws_sns_topic.alerts.arn
+      }
+    ]
+  })
+}
+
+resource "aws_kms_key" "global_security_alerts" {
+  provider = aws.global_events
+
+  description             = "${var.name_prefix} global security alerts encryption key"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EnableAccountAdministration"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.global_events.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowEventBridgeToPublishEncryptedSnsMessages"
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_kms_alias" "global_security_alerts" {
+  provider = aws.global_events
+
+  name          = "alias/${var.name_prefix}-global-security-alerts"
+  target_key_id = aws_kms_key.global_security_alerts.key_id
+}
+
+resource "aws_sns_topic" "global_security_alerts" {
+  provider = aws.global_events
+
+  name              = "${var.name_prefix}-global-security-alerts"
+  kms_master_key_id = aws_kms_key.global_security_alerts.arn
+}
+
+resource "aws_sns_topic_subscription" "global_security_email" {
+  provider = aws.global_events
+  count    = var.alert_email == "" ? 0 : 1
+
+  topic_arn = aws_sns_topic.global_security_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+resource "aws_sns_topic_policy" "global_security_alerts" {
+  provider = aws.global_events
+
+  arn = aws_sns_topic.global_security_alerts.arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowEventBridgePublish"
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+        Action   = "sns:Publish"
+        Resource = aws_sns_topic.global_security_alerts.arn
+      }
+    ]
+  })
+}
+
+resource "aws_cloudwatch_event_rule" "high_risk_iam_changes" {
+  provider = aws.global_events
+
+  name        = "${var.name_prefix}-high-risk-iam-changes"
+  description = "High-risk IAM changes captured from CloudTrail global service events"
+
+  event_pattern = jsonencode({
+    source      = ["aws.iam"]
+    detail-type = ["AWS API Call via CloudTrail"]
+    detail = {
+      eventSource = ["iam.amazonaws.com"]
+      eventName = [
+        "AttachGroupPolicy",
+        "AttachRolePolicy",
+        "AttachUserPolicy",
+        "CreateAccessKey",
+        "CreateLoginProfile",
+        "CreatePolicyVersion",
+        "CreateUser",
+        "DeleteAccessKey",
+        "DeleteUser",
+        "DetachGroupPolicy",
+        "DetachRolePolicy",
+        "DetachUserPolicy",
+        "PutGroupPolicy",
+        "PutRolePolicy",
+        "PutUserPolicy",
+        "SetDefaultPolicyVersion",
+        "UpdateAccessKey",
+        "UpdateAssumeRolePolicy",
+        "UpdateLoginProfile"
+      ]
+    }
+  })
+}
+
+resource "aws_cloudwatch_event_target" "high_risk_iam_changes" {
+  provider = aws.global_events
+
+  rule      = aws_cloudwatch_event_rule.high_risk_iam_changes.name
+  target_id = "security-alerts-sns"
+  arn       = aws_sns_topic.global_security_alerts.arn
 }
 
 data "archive_file" "audit_report" {
@@ -120,4 +268,3 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
     LoadBalancer = var.alb_arn_suffix
   }
 }
-

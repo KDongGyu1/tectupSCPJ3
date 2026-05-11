@@ -4,3 +4,14 @@ variable "environment" { type = string }
 variable "alert_email" { type = string }
 variable "logs_kms_key_arn" { type = string }
 variable "alb_arn_suffix" { type = string }
+
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      configuration_aliases = [
+        aws.global_events
+      ]
+    }
+  }
+}

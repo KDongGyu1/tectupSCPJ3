@@ -32,3 +32,22 @@ provider "aws" {
     tags = local.common_tags
   }
 }
+
+provider "aws" {
+  alias   = "global_events"
+  region  = "us-east-1"
+  profile = var.aws_profile == "" ? null : var.aws_profile
+
+  dynamic "assume_role" {
+    for_each = var.assume_role_arn == "" ? [] : [var.assume_role_arn]
+
+    content {
+      role_arn     = assume_role.value
+      session_name = var.assume_role_session_name
+    }
+  }
+
+  default_tags {
+    tags = local.common_tags
+  }
+}

@@ -123,6 +123,10 @@ module "compliance" {
 module "automation" {
   source = "./modules/automation"
 
+  providers = {
+    aws.global_events = aws.global_events
+  }
+
   name_prefix      = local.name_prefix
   project_name     = var.project_name
   environment      = var.environment

@@ -11,6 +11,8 @@ output "rds_master_secret_arn" {
   sensitive = true
 }
 output "central_logs_bucket" { value = module.logging.central_logs_bucket }
+output "alerts_topic_arn" { value = module.automation.alerts_topic_arn }
+output "global_security_alerts_topic_arn" { value = module.automation.global_security_alerts_topic_arn }
 output "operations_admin_role_arn" { value = module.iam.operations_admin_role_arn }
 output "security_admin_role_arn" { value = module.iam.security_admin_role_arn }
 output "auditor_role_arn" { value = module.iam.auditor_role_arn }
