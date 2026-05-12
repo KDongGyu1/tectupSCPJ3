@@ -1,5 +1,5 @@
 resource "aws_s3_bucket" "central_logs" {
-  bucket              = "${var.name_prefix}-logs-${var.account_id}"
+  bucket              = "${var.name_prefix}-central-logs-${var.account_id}"
   force_destroy       = true
   object_lock_enabled = true
 }
@@ -24,12 +24,17 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "central_logs" {
 }
 
 resource "aws_s3_bucket_object_lock_configuration" "central_logs" {
-  bucket = aws_s3_bucket.central_logs.id
+  bucket              = aws_s3_bucket.central_logs.id
+  object_lock_enabled = "Enabled"
 
-  rule {
-    default_retention {
-      mode = "GOVERNANCE"
-      days = var.log_object_lock_retention_days
+  dynamic "rule" {
+    for_each = var.enable_log_object_lock ? [1] : []
+
+    content {
+      default_retention {
+        mode = "GOVERNANCE"
+        days = var.log_object_lock_retention_days
+      }
     }
   }
 }

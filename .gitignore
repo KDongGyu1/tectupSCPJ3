@@ -28,6 +28,8 @@ override.tf.json
 *.tfplan
 *.tfplan.json
 **/.terraform-build/
+versions.json
+delete-markers.json
 
 ##################################
 # Local workspace
