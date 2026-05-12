@@ -1,34 +1,34 @@
-# Network Access Control Compliance
+# 네트워크 접근통제 컴플라이언스
 
-This document defines the network access control review criteria for the FinPay Terraform architecture.
+이 문서는 FinPay Terraform 아키텍처의 네트워크 접근통제 검토 기준을 정의한다.
 
-## Scope
+## 적용 범위
 
-| Area | Terraform resources | Review purpose |
+| 영역 | Terraform 리소스 | 검토 목적 |
 | --- | --- | --- |
-| Security Group | `modules/security_groups` | Verify tier-based access control between ALB, app, DB, and VPC endpoints. |
-| WAF | `modules/waf` | Verify public ALB traffic is protected by managed rules and rate monitoring. |
-| Change detection | `modules/automation` | Detect Security Group changes through CloudTrail events and EventBridge alerts. |
-| VPC Endpoint | `modules/network`, `modules/vpc_endpoints` | Verify private access paths for AWS services and reduce public internet dependency. |
-| Subnet and routing | `modules/network` | Verify public, private app, and isolated DB subnet behavior. |
+| Security Group | `modules/security_groups` | ALB, App, DB, VPC Endpoint 간 계층 기반 접근통제가 적용되어 있는지 확인한다. |
+| WAF | `modules/waf` | Public ALB 트래픽이 관리형 규칙과 Rate Limit 모니터링으로 보호되는지 확인한다. |
+| 변경 탐지 | `modules/automation` | CloudTrail 이벤트와 EventBridge 알림을 통해 Security Group 변경을 탐지한다. |
+| VPC Endpoint | `modules/network`, `modules/vpc_endpoints` | AWS 서비스 접근 경로가 프라이빗하게 구성되어 있고 퍼블릭 인터넷 의존도가 줄어드는지 확인한다. |
+| 서브넷 및 라우팅 | `modules/network` | 퍼블릭 서브넷, 프라이빗 App 서브넷, 격리 DB 서브넷의 동작을 확인한다. |
 
-## Network Violation Criteria
+## 네트워크 위반 기준
 
-| No. | Check item | Normal condition | Violation condition | Severity | Evidence |
+| No. | 점검 항목 | 정상 기준 | 위반 기준 | 심각도 | 증빙 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | DB Security Group exposure | DB SG allows PostgreSQL `5432` only from App SG. | DB SG allows `0.0.0.0/0`, `::/0`, public CIDR, or ALB SG directly. | Risk | `aws ec2 describe-security-groups` |
-| 2 | App Security Group source | App SG allows service port `8080` only from ALB SG. | App SG allows `0.0.0.0/0`, `::/0`, office CIDR, SSH, or direct user access. | Risk | `aws ec2 describe-security-groups` |
-| 3 | SSH exposure | No inbound `22` rule exists on ALB, App, DB, or VPCE SG. | TCP `22` is open to any CIDR or non-approved source. | Risk | `aws ec2 describe-security-groups` |
-| 4 | Public IP assignment | App and DB subnets use `map_public_ip_on_launch = false`; EC2 app instances have no public IP. | App/DB subnet auto-assigns public IP, or private EC2 has a public IP. | Risk | `aws ec2 describe-subnets`, `aws ec2 describe-instances` |
-| 5 | DB subnet routing | DB route table has no `0.0.0.0/0` route to IGW or NAT. | DB subnet has public/default internet route. | Risk | `aws ec2 describe-route-tables` |
-| 6 | ALB public exposure | Only ALB SG may allow external HTTP/HTTPS based on service policy. | App or DB tier is externally reachable without ALB. | Risk | SG, route table, EC2 public IP check |
-| 7 | WAF association | WAF Web ACL is associated with the public ALB. | ALB has no WAF association. | Risk | `aws wafv2 get-web-acl-for-resource` |
-| 8 | VPC Endpoint access | Interface endpoint SG allows `443` only from App SG. | Endpoint SG allows `443` from `0.0.0.0/0` or unrelated SG. | Caution/Risk | `aws ec2 describe-vpc-endpoints`, SG check |
-| 9 | ALB listener policy | HTTP `80` is allowed only when accepted by service policy; HTTPS `443` is preferred when ACM is configured. | Public listener exposes unnecessary ports or unreviewed protocols. | Caution | `aws elbv2 describe-listeners` |
+| 1 | DB Security Group 노출 | DB SG는 App SG에서 오는 PostgreSQL `5432`만 허용한다. | DB SG가 `0.0.0.0/0`, `::/0`, 퍼블릭 CIDR 또는 ALB SG 직접 접근을 허용한다. | 위험 | `aws ec2 describe-security-groups` |
+| 2 | App Security Group 출발지 | App SG는 ALB SG에서 오는 서비스 포트 `8080`만 허용한다. | App SG가 `0.0.0.0/0`, `::/0`, 사무실 CIDR, SSH 또는 사용자 직접 접근을 허용한다. | 위험 | `aws ec2 describe-security-groups` |
+| 3 | SSH 노출 | ALB, App, DB, VPCE SG에 인바운드 `22` 규칙이 없어야 한다. | TCP `22`가 임의 CIDR 또는 승인되지 않은 출발지에 열려 있다. | 위험 | `aws ec2 describe-security-groups` |
+| 4 | Public IP 할당 | App 및 DB 서브넷은 `map_public_ip_on_launch = false`이고, App EC2 인스턴스는 Public IP가 없어야 한다. | App/DB 서브넷이 Public IP를 자동 할당하거나 프라이빗 EC2에 Public IP가 있다. | 위험 | `aws ec2 describe-subnets`, `aws ec2 describe-instances` |
+| 5 | DB 서브넷 라우팅 | DB 라우팅 테이블에는 IGW 또는 NAT로 향하는 `0.0.0.0/0` 라우트가 없어야 한다. | DB 서브넷에 퍼블릭 또는 기본 인터넷 라우트가 있다. | 위험 | `aws ec2 describe-route-tables` |
+| 6 | ALB 퍼블릭 노출 | 외부 HTTP/HTTPS 접근 허용은 서비스 정책에 따라 ALB SG에만 허용한다. | App 또는 DB 계층이 ALB를 거치지 않고 외부에서 직접 접근 가능하다. | 위험 | SG, 라우팅 테이블, EC2 Public IP 점검 |
+| 7 | WAF 연결 | WAF Web ACL이 Public ALB에 연결되어 있어야 한다. | ALB에 WAF가 연결되어 있지 않다. | 위험 | `aws wafv2 get-web-acl-for-resource` |
+| 8 | VPC Endpoint 접근 | Interface Endpoint SG는 App SG에서 오는 `443`만 허용한다. | Endpoint SG가 `0.0.0.0/0` 또는 관련 없는 SG에서 오는 `443`을 허용한다. | 주의/위험 | `aws ec2 describe-vpc-endpoints`, SG 점검 |
+| 9 | ALB Listener 정책 | HTTP `80`은 서비스 정책상 허용될 때만 사용하고, ACM 설정 시 HTTPS `443`을 우선한다. | Public Listener가 불필요한 포트 또는 검토되지 않은 프로토콜을 노출한다. | 주의 | `aws elbv2 describe-listeners` |
 
-## Network Inspection Command Set
+## 네트워크 점검 명령어 세트
 
-Set common variables first.
+먼저 공통 변수를 설정한다.
 
 ```bash
 export AWS_PROFILE=fintech
@@ -38,7 +38,7 @@ export NAME_PREFIX=finpay-dev
 aws sts get-caller-identity
 ```
 
-Check Security Group rules.
+Security Group 규칙을 확인한다.
 
 ```bash
 aws ec2 describe-security-groups \
@@ -47,7 +47,7 @@ aws ec2 describe-security-groups \
   --output json
 ```
 
-Check if SSH is publicly open.
+SSH가 퍼블릭으로 열려 있는지 확인한다.
 
 ```bash
 aws ec2 describe-security-groups \
@@ -55,7 +55,7 @@ aws ec2 describe-security-groups \
   --output table
 ```
 
-Check subnet public IP settings.
+서브넷 Public IP 자동 할당 설정을 확인한다.
 
 ```bash
 aws ec2 describe-subnets \
@@ -64,7 +64,7 @@ aws ec2 describe-subnets \
   --output table
 ```
 
-Check running EC2 public IP assignment.
+실행 중인 EC2의 Public IP 할당 여부를 확인한다.
 
 ```bash
 aws ec2 describe-instances \
@@ -73,7 +73,7 @@ aws ec2 describe-instances \
   --output table
 ```
 
-Check route tables.
+라우팅 테이블을 확인한다.
 
 ```bash
 aws ec2 describe-route-tables \
@@ -82,7 +82,7 @@ aws ec2 describe-route-tables \
   --output json
 ```
 
-Check ALB listeners.
+ALB Listener를 확인한다.
 
 ```bash
 ALB_ARN=$(aws elbv2 describe-load-balancers \
@@ -96,7 +96,7 @@ aws elbv2 describe-listeners \
   --output table
 ```
 
-Check WAF association.
+WAF 연결 상태를 확인한다.
 
 ```bash
 aws wafv2 get-web-acl-for-resource \
@@ -104,7 +104,7 @@ aws wafv2 get-web-acl-for-resource \
   --region "$AWS_REGION"
 ```
 
-Check Security Group change detection rule.
+Security Group 변경 탐지 규칙을 확인한다.
 
 ```bash
 aws events describe-rule \
@@ -116,7 +116,7 @@ aws events list-targets-by-rule \
   --region "$AWS_REGION"
 ```
 
-Check VPC endpoints.
+VPC Endpoint를 확인한다.
 
 ```bash
 VPC_ID=$(aws ec2 describe-vpcs \
@@ -130,78 +130,78 @@ aws ec2 describe-vpc-endpoints \
   --output table
 ```
 
-## Compliance Mapping
+## 컴플라이언스 매핑
 
-| Control item | Terraform resource | Expected state | Evidence command | Judgment |
+| 통제 항목 | Terraform 리소스 | 기대 상태 | 증빙 명령어 | 판정 |
 | --- | --- | --- | --- | --- |
-| External entry point is limited to ALB | `aws_security_group.alb`, `aws_lb.app` | Only ALB SG permits approved public HTTP/HTTPS CIDRs. | SG and ALB listener checks | Normal/Caution |
-| App tier cannot be reached directly | `aws_security_group.app`, `aws_subnet.app` | App SG ingress source is ALB SG; app subnet has no public IP auto-assign. | SG, subnet, EC2 checks | Normal/Risk |
-| DB tier is isolated | `aws_security_group.db`, `aws_subnet.db`, `aws_route_table.db` | DB SG source is App SG; DB route table has no internet default route. | SG and route table checks | Normal/Risk |
-| SSH is not publicly exposed | All SGs | No TCP `22` ingress from public CIDR. | SSH SG query | Normal/Risk |
-| WAF protects public traffic | `aws_wafv2_web_acl.alb`, `aws_wafv2_web_acl_association.alb` | ALB has Web ACL association. | WAF association check | Normal/Risk |
-| Managed WAF rules are enabled | `modules/waf` managed rule groups | AWS reputation, anonymous IP, common, bad inputs, SQLi, admin protection rules exist. | WAF console or Terraform plan | Normal/Caution |
-| Rate monitoring exists by service path | `modules/waf` custom rate rules | `/auth/`, `/payments/`, `/transactions/`, `/ops/`, `/audit/` count rules exist. | WAF console or Terraform plan | Normal/Caution |
-| Security Group changes are detected | `aws_cloudwatch_event_rule.security_group_changes`, `aws_cloudwatch_event_target.security_group_changes` | SG create/delete and ingress/egress rule changes are routed to SNS alerts. | EventBridge rule and target checks | Normal/Risk |
-| Private AWS service access exists | `aws_vpc_endpoint.s3`, `aws_vpc_endpoint.interface` | S3 Gateway endpoint and interface endpoints for KMS, Secrets Manager, Logs, SSM exist. | VPC endpoint check | Normal/Caution |
-| Endpoint access is restricted | `aws_security_group.vpc_endpoints` | VPCE SG allows `443` from App SG only. | SG check | Normal/Risk |
+| 외부 진입점 ALB 제한 | `aws_security_group.alb`, `aws_lb.app` | ALB SG만 승인된 퍼블릭 HTTP/HTTPS CIDR을 허용한다. | SG 및 ALB Listener 점검 | 정상/주의 |
+| App 계층 직접 접근 차단 | `aws_security_group.app`, `aws_subnet.app` | App SG 인바운드 출발지는 ALB SG이며, App 서브넷은 Public IP 자동 할당이 꺼져 있다. | SG, 서브넷, EC2 점검 | 정상/위험 |
+| DB 계층 격리 | `aws_security_group.db`, `aws_subnet.db`, `aws_route_table.db` | DB SG 출발지는 App SG이며, DB 라우팅 테이블에는 인터넷 기본 라우트가 없다. | SG 및 라우팅 테이블 점검 | 정상/위험 |
+| SSH 퍼블릭 노출 차단 | 모든 SG | 퍼블릭 CIDR에서 오는 TCP `22` 인바운드가 없다. | SSH SG 조회 | 정상/위험 |
+| WAF 기반 퍼블릭 트래픽 보호 | `aws_wafv2_web_acl.alb`, `aws_wafv2_web_acl_association.alb` | ALB에 Web ACL이 연결되어 있다. | WAF 연결 확인 | 정상/위험 |
+| WAF 관리형 규칙 활성화 | `modules/waf` 관리형 규칙 그룹 | AWS 평판, Anonymous IP, Common, Bad Inputs, SQLi, Admin Protection 규칙이 존재한다. | WAF 콘솔 또는 Terraform plan | 정상/주의 |
+| 서비스 경로별 Rate 모니터링 | `modules/waf` 사용자 정의 Rate 규칙 | `/auth/`, `/payments/`, `/transactions/`, `/ops/`, `/audit/` count 규칙이 존재한다. | WAF 콘솔 또는 Terraform plan | 정상/주의 |
+| Security Group 변경 탐지 | `aws_cloudwatch_event_rule.security_group_changes`, `aws_cloudwatch_event_target.security_group_changes` | SG 생성/삭제 및 인바운드/아웃바운드 규칙 변경이 SNS 알림으로 전달된다. | EventBridge 규칙 및 Target 점검 | 정상/위험 |
+| 프라이빗 AWS 서비스 접근 | `aws_vpc_endpoint.s3`, `aws_vpc_endpoint.interface` | S3 Gateway Endpoint와 KMS, Secrets Manager, Logs, SSM Interface Endpoint가 존재한다. | VPC Endpoint 점검 | 정상/주의 |
+| Endpoint 접근 제한 | `aws_security_group.vpc_endpoints` | VPCE SG는 App SG에서 오는 `443`만 허용한다. | SG 점검 | 정상/위험 |
 
-## Excessive External Access Response Procedure
+## 외부 접근 과다 허용 대응 절차
 
-1. Identify the exposed resource.
-   - Confirm whether the exposure is on ALB SG, App SG, DB SG, VPCE SG, route table, subnet public IP setting, or ALB listener.
-2. Classify severity.
-   - DB public access, SSH public access, or App direct public access is `Risk`.
-   - ALB HTTP `0.0.0.0/0` is `Caution` when the service policy accepts public HTTP, otherwise `Risk`.
-3. Reduce CIDR scope.
-   - Replace `0.0.0.0/0` with approved CIDR ranges when external access is not intended for all users.
-4. Remove invalid Security Group rules.
-   - Remove SSH public rules.
-   - Change App SG source to ALB SG.
-   - Change DB SG source to App SG.
-5. Review ALB listeners.
-   - Keep only required `80` and/or `443` listeners.
-   - Prefer HTTPS when `alb_certificate_arn` is configured.
-6. Verify WAF.
-   - Confirm Web ACL is associated with ALB.
-   - Confirm managed rule groups and rate rules are present.
-7. Verify Security Group change detection.
-   - Confirm EventBridge rule `${NAME_PREFIX}-security-group-changes` exists.
-   - Confirm the rule target is the local SNS alert topic.
-8. Re-run inspection commands.
-   - Capture command output as evidence.
-9. Record remediation.
-   - Document before/after rule, owner, time, and residual risk.
+1. 노출 리소스를 식별한다.
+   - ALB SG, App SG, DB SG, VPCE SG, 라우팅 테이블, 서브넷 Public IP 설정, ALB Listener 중 어디에서 노출이 발생했는지 확인한다.
+2. 심각도를 분류한다.
+   - DB 퍼블릭 접근, SSH 퍼블릭 접근, App 직접 퍼블릭 접근은 `위험`으로 분류한다.
+   - ALB HTTP `0.0.0.0/0`은 서비스 정책상 퍼블릭 HTTP를 허용하는 경우 `주의`, 그렇지 않으면 `위험`으로 분류한다.
+3. CIDR 범위를 축소한다.
+   - 모든 사용자 대상 외부 접근이 필요하지 않다면 `0.0.0.0/0`을 승인된 CIDR 범위로 교체한다.
+4. 잘못된 Security Group 규칙을 제거한다.
+   - SSH 퍼블릭 규칙을 제거한다.
+   - App SG 출발지를 ALB SG로 변경한다.
+   - DB SG 출발지를 App SG로 변경한다.
+5. ALB Listener를 검토한다.
+   - 필요한 `80` 및 `443` Listener만 유지한다.
+   - `alb_certificate_arn`이 설정되어 있다면 HTTPS를 우선 사용한다.
+6. WAF를 확인한다.
+   - Web ACL이 ALB에 연결되어 있는지 확인한다.
+   - 관리형 규칙 그룹과 Rate 규칙이 존재하는지 확인한다.
+7. Security Group 변경 탐지를 확인한다.
+   - EventBridge 규칙 `${NAME_PREFIX}-security-group-changes`가 존재하는지 확인한다.
+   - 규칙 Target이 로컬 SNS 알림 Topic인지 확인한다.
+8. 점검 명령어를 다시 실행한다.
+   - 명령어 출력 결과를 증빙으로 캡처한다.
+9. 조치 결과를 기록한다.
+   - 조치 전/후 규칙, 담당자, 시간, 잔여 위험을 문서화한다.
 
-## ALB Bypass Review Criteria
+## ALB 우회 접근 점검 기준
 
-| Check item | Normal condition | Bypass risk condition | Evidence |
+| 점검 항목 | 정상 기준 | 우회 위험 기준 | 증빙 |
 | --- | --- | --- | --- |
-| EC2 public IP | App EC2 instances have no public IP. | App EC2 has a public IP. | `describe-instances` |
-| App subnet setting | App subnet `MapPublicIpOnLaunch` is `false`. | App subnet auto-assigns public IP. | `describe-subnets` |
-| App SG ingress | App SG `8080` source is ALB SG only. | App SG allows public CIDR or non-ALB source. | `describe-security-groups` |
-| DB SG ingress | DB SG `5432` source is App SG only. | DB SG allows public CIDR, ALB SG, or broad VPC without approval. | `describe-security-groups` |
-| DB route table | DB route table has no default route to IGW/NAT. | DB route table has internet-routable default path. | `describe-route-tables` |
-| ALB WAF | ALB is associated with WAF. | Public ALB has no Web ACL. | `get-web-acl-for-resource` |
+| EC2 Public IP | App EC2 인스턴스에 Public IP가 없다. | App EC2에 Public IP가 있다. | `describe-instances` |
+| App 서브넷 설정 | App 서브넷 `MapPublicIpOnLaunch`가 `false`이다. | App 서브넷이 Public IP를 자동 할당한다. | `describe-subnets` |
+| App SG 인바운드 | App SG `8080` 출발지는 ALB SG만 허용한다. | App SG가 퍼블릭 CIDR 또는 ALB가 아닌 출발지를 허용한다. | `describe-security-groups` |
+| DB SG 인바운드 | DB SG `5432` 출발지는 App SG만 허용한다. | DB SG가 퍼블릭 CIDR, ALB SG 또는 승인되지 않은 넓은 VPC 범위를 허용한다. | `describe-security-groups` |
+| DB 라우팅 테이블 | DB 라우팅 테이블에는 IGW/NAT 기본 라우트가 없다. | DB 라우팅 테이블에 인터넷 라우팅 가능한 기본 경로가 있다. | `describe-route-tables` |
+| ALB WAF | ALB에 WAF가 연결되어 있다. | Public ALB에 Web ACL이 없다. | `get-web-acl-for-resource` |
 
-## Network Access Control Judgment Criteria
+## 네트워크 접근통제 판정 기준
 
-| Judgment | Criteria | Example |
+| 판정 | 기준 | 예시 |
 | --- | --- | --- |
-| Normal | Access follows tier-based source restrictions and only approved public entry points exist. | ALB SG allows `80/443`; App SG allows `8080` from ALB SG; DB SG allows `5432` from App SG. |
-| Caution | External exposure exists but may be service-policy acceptable or is monitored rather than blocked. | ALB HTTP `80` open to `0.0.0.0/0`; WAF rate rules are `count`; VPC endpoint missing for non-critical private path. |
-| Risk | A private or sensitive tier is directly reachable, or protection controls are missing. | DB SG open to public; App SG open to public; SSH `22` open; app EC2 has public IP; ALB has no WAF. |
+| 정상 | 계층 기반 출발지 제한을 따르고 승인된 퍼블릭 진입점만 존재한다. | ALB SG가 `80/443`을 허용하고, App SG는 ALB SG의 `8080`만 허용하며, DB SG는 App SG의 `5432`만 허용한다. |
+| 주의 | 외부 노출이 있으나 서비스 정책상 허용 가능하거나 차단 대신 모니터링 중이다. | ALB HTTP `80`이 `0.0.0.0/0`에 열려 있음, WAF Rate 규칙이 `count` 모드임, 중요도가 낮은 프라이빗 경로에 VPC Endpoint가 없음. |
+| 위험 | 프라이빗 또는 민감 계층이 직접 접근 가능하거나 보호 통제가 누락되어 있다. | DB SG 퍼블릭 오픈, App SG 퍼블릭 오픈, SSH `22` 오픈, App EC2 Public IP 보유, ALB WAF 미연결. |
 
-## Current Terraform Baseline
+## 현재 Terraform 기준선
 
-| Component | Current baseline |
+| 구성 요소 | 현재 기준선 |
 | --- | --- |
-| ALB SG | Allows `80` and `443` from `allowed_http_cidr_blocks`; egress `8080` to VPC CIDR. |
-| App SG | Allows `8080` from ALB SG only. |
-| DB SG | Allows `5432` from App SG only. |
-| VPCE SG | Allows `443` from App SG only. |
-| Public subnets | Routed to Internet Gateway; `map_public_ip_on_launch = false`. |
-| App subnets | Routed through NAT Gateway; `map_public_ip_on_launch = false`. |
-| DB subnets | Local-only route table; `map_public_ip_on_launch = false`. |
-| WAF | AWS managed rules plus path-specific rate count rules associated with ALB. |
-| SG change detection | EventBridge detects Security Group rule changes from CloudTrail EC2 API events and sends them to SNS alerts. |
-| VPC endpoints | S3 Gateway endpoint plus KMS, Secrets Manager, Logs, SSM, SSM Messages, EC2 Messages interface endpoints. |
+| ALB SG | `allowed_http_cidr_blocks`에서 오는 `80`, `443`을 허용하고, VPC CIDR로 향하는 `8080` 아웃바운드를 허용한다. |
+| App SG | ALB SG에서 오는 `8080`만 허용한다. |
+| DB SG | App SG에서 오는 `5432`만 허용한다. |
+| VPCE SG | App SG에서 오는 `443`만 허용한다. |
+| Public subnets | Internet Gateway로 라우팅되며 `map_public_ip_on_launch = false`이다. |
+| App subnets | NAT Gateway를 통해 라우팅되며 `map_public_ip_on_launch = false`이다. |
+| DB subnets | Local-only 라우팅 테이블을 사용하며 `map_public_ip_on_launch = false`이다. |
+| WAF | AWS 관리형 규칙과 경로별 Rate count 규칙이 ALB에 연결되어 있다. |
+| SG 변경 탐지 | EventBridge가 CloudTrail EC2 API 이벤트에서 Security Group 규칙 변경을 탐지하고 SNS 알림으로 전송한다. |
+| VPC endpoints | S3 Gateway Endpoint와 KMS, Secrets Manager, Logs, SSM, SSM Messages, EC2 Messages Interface Endpoint로 구성된다. |

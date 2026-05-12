@@ -1,14 +1,14 @@
-# IAM Role Specification
+# IAM 역할 명세
 
-The active IAM implementation is in `modules/iam`.
+현재 IAM 구현은 `modules/iam`에 정의되어 있다.
 
-## Roles
+## 역할
 
-- Operations administrator role: intended for infrastructure operation tasks with MFA-oriented access assumptions.
-- Security administrator role: intended for security configuration and monitoring operations.
-- Auditor role: intended for read-only audit and review workflows.
-- Application instance profile: attached to private EC2 application instances.
+- 운영 관리자 역할: MFA 기반 접근을 전제로 인프라 운영 작업을 수행하기 위한 역할이다.
+- 보안 관리자 역할: 보안 설정 관리와 모니터링 작업을 수행하기 위한 역할이다.
+- 감사자 역할: 읽기 전용 감사 및 검토 업무를 수행하기 위한 역할이다.
+- 애플리케이션 인스턴스 프로파일: 프라이빗 EC2 애플리케이션 인스턴스에 연결되는 실행 역할이다.
 
-## Notes
+## 참고 사항
 
-IAM Identity Center assignments are normally managed at the AWS Organizations or account administration layer. This Terraform project focuses on IAM roles and policies that belong to the workload.
+IAM Identity Center 할당은 일반적으로 AWS Organizations 또는 계정 관리 계층에서 운영한다. 이 Terraform 프로젝트는 워크로드에 필요한 IAM 역할과 정책 구성을 중심으로 다룬다.
