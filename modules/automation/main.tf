@@ -30,6 +30,15 @@ resource "aws_sns_topic_policy" "alerts" {
         }
         Action   = "sns:Publish"
         Resource = aws_sns_topic.alerts.arn
+      },
+      {
+        Sid    = "AllowEventBridgePublish"
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+        Action   = "sns:Publish"
+        Resource = aws_sns_topic.alerts.arn
       }
     ]
   })
@@ -156,6 +165,36 @@ resource "aws_cloudwatch_event_target" "high_risk_iam_changes" {
   rule      = aws_cloudwatch_event_rule.high_risk_iam_changes.name
   target_id = "security-alerts-sns"
   arn       = aws_sns_topic.global_security_alerts.arn
+}
+
+resource "aws_cloudwatch_event_rule" "security_group_changes" {
+  name        = "${var.name_prefix}-security-group-changes"
+  description = "Security Group changes captured from CloudTrail EC2 API events"
+
+  event_pattern = jsonencode({
+    source      = ["aws.ec2"]
+    detail-type = ["AWS API Call via CloudTrail"]
+    detail = {
+      eventSource = ["ec2.amazonaws.com"]
+      eventName = [
+        "AuthorizeSecurityGroupIngress",
+        "AuthorizeSecurityGroupEgress",
+        "RevokeSecurityGroupIngress",
+        "RevokeSecurityGroupEgress",
+        "CreateSecurityGroup",
+        "DeleteSecurityGroup",
+        "ModifySecurityGroupRules",
+        "UpdateSecurityGroupRuleDescriptionsIngress",
+        "UpdateSecurityGroupRuleDescriptionsEgress"
+      ]
+    }
+  })
+}
+
+resource "aws_cloudwatch_event_target" "security_group_changes" {
+  rule      = aws_cloudwatch_event_rule.security_group_changes.name
+  target_id = "security-group-changes-sns"
+  arn       = aws_sns_topic.alerts.arn
 }
 
 data "archive_file" "audit_report" {
