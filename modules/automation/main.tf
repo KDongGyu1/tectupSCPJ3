@@ -240,6 +240,15 @@ resource "aws_iam_role_policy" "audit_report" {
           "cloudtrail:LookupEvents"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:GenerateDataKey"
+        ]
+        Resource = var.logs_kms_key_arn
       }
     ]
   })
