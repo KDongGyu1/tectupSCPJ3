@@ -61,3 +61,11 @@ Keep `enable_log_object_lock = false` while repeatedly running `terraform destro
 - Do not commit `terraform.tfvars`, `*.tfstate`, plan files, or build artifacts.
 - Add new Terraform resources through `modules/` when they belong to a reusable component.
 - Update `docs/` when architecture, security controls, or operating assumptions change.
+
+## Audit And Operations Notes
+
+- `docs/audit-result-classification.md` defines monthly audit result severity.
+- `docs/audit-automation-flow.md` explains the EventBridge, Lambda, and SNS report flow.
+- `docs/security-event-response-manual.md` lists response steps for high-risk security events.
+- `docs/compliance-tool-adoption-criteria.md` defines when to enable optional compliance services.
+- `docs/automation-failure-runbook.md` lists checks for EventBridge, Lambda, SNS, and log delivery failures.

@@ -69,6 +69,7 @@ data "aws_iam_policy_document" "kms_logs" {
         "config.amazonaws.com",
         "events.amazonaws.com",
         "logs.${data.aws_region.current.name}.amazonaws.com",
+        "sns.amazonaws.com",
         "delivery.logs.amazonaws.com",
         "s3.amazonaws.com",
       ]
