@@ -147,8 +147,16 @@ resource "aws_launch_template" "app" {
   }
 
   user_data = base64encode(templatefile("${path.module}/user_data.sh.tftpl", {
-    service_name = each.value.name
-    environment  = var.environment
+    service_name           = each.value.name
+    service_key            = each.key
+    service_description    = each.value.description
+    service_path           = each.value.path
+    environment            = var.environment
+    name_prefix            = var.name_prefix
+    cognito_user_pool_id   = var.cognito_user_pool_id
+    cognito_web_client_id  = var.cognito_web_client_id
+    rds_endpoint           = var.rds_endpoint
+    rds_master_secret_arn  = var.rds_master_secret_arn
   }))
 
   tag_specifications {
@@ -174,6 +182,14 @@ resource "aws_autoscaling_group" "app" {
   launch_template {
     id      = aws_launch_template.app[each.key].id
     version = "$Latest"
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      min_healthy_percentage = 50
+    }
   }
 
   tag {

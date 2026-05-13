@@ -3,8 +3,6 @@ set -euo pipefail
 
 dnf install -y python3
 
-
-# SSM Agent 설치 및 실행 되었는지 확인
 if ! systemctl list-unit-files | grep -q amazon-ssm-agent; then
   dnf install -y amazon-ssm-agent || true
 fi
@@ -12,48 +10,369 @@ fi
 systemctl enable amazon-ssm-agent
 systemctl restart amazon-ssm-agent
 
-
 mkdir -p /opt/finpay
 cat >/opt/finpay/server.py <<'PY'
+import html
 import json
+import socket
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
 
 SERVICE = "${service_name}"
+SERVICE_KEY = "${service_key}"
+SERVICE_DESCRIPTION = "${service_description}"
+SERVICE_PATH = "${service_path}"
 ENVIRONMENT = "${environment}"
+NAME_PREFIX = "${name_prefix}"
+COGNITO_USER_POOL_ID = "${cognito_user_pool_id}"
+COGNITO_WEB_CLIENT_ID = "${cognito_web_client_id}"
+RDS_ENDPOINT = "${rds_endpoint}"
+RDS_MASTER_SECRET_ARN = "${rds_master_secret_arn}"
+
+ROLE_ACCESS = {
+    "payment": {"Customer", "Merchant", "SettlementOperator", "OperationsAdmin"},
+    "auth": {"Customer", "Merchant", "OperationsAdmin", "SecurityAdmin"},
+    "ops": {"Auditor", "OperationsAdmin", "SecurityAdmin"},
+}
+
+ROLE_LABELS = [
+    "Customer",
+    "Merchant",
+    "SettlementOperator",
+    "Auditor",
+    "OperationsAdmin",
+    "SecurityAdmin",
+]
+
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def db_probe():
+    if not RDS_ENDPOINT:
+        return {"status": "skipped", "reason": "rds_endpoint is empty"}
+
+    try:
+        with socket.create_connection((RDS_ENDPOINT, 5432), timeout=3):
+            return {
+                "status": "reachable",
+                "host": RDS_ENDPOINT,
+                "port": 5432,
+                "checked_at": now_iso(),
+            }
+    except OSError as exc:
+        return {
+            "status": "unreachable",
+            "host": RDS_ENDPOINT,
+            "port": 5432,
+            "error": str(exc),
+            "checked_at": now_iso(),
+        }
+
+
+def role_allowed(role):
+    return role in ROLE_ACCESS.get(SERVICE_KEY, set())
+
+
+def json_bytes(payload):
+    return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+
 
 class Handler(BaseHTTPRequestHandler):
+    server_version = "FinPayDemo/1.0"
+
     def do_GET(self):
-        self._send()
+        parsed = urlparse(self.path)
+
+        if parsed.path == "/health":
+            self.send_json({"status": "healthy", "service": SERVICE, "environment": ENVIRONMENT})
+            return
+
+        if parsed.path == "/db-check":
+            self.send_json(db_probe())
+            return
+
+        if parsed.path == "/config":
+            self.send_json(self.config_payload())
+            return
+
+        if parsed.path == "/api/session":
+            query = parse_qs(parsed.query)
+            role = query.get("role", ["Customer"])[0]
+            self.send_json(self.session_payload(role))
+            return
+
+        self.send_html(self.render_page(parsed))
 
     def do_POST(self):
-        self._send()
+        self.do_GET()
 
     def do_PATCH(self):
-        self._send()
+        self.do_GET()
 
-    def _send(self):
-        status = 200
-        body = {
-            "service": SERVICE,
+    def config_payload(self):
+        return {
+            "project": NAME_PREFIX,
             "environment": ENVIRONMENT,
-            "path": self.path,
-            "status": "ok"
+            "service": SERVICE,
+            "service_key": SERVICE_KEY,
+            "service_path": SERVICE_PATH,
+            "cognito_user_pool_id": COGNITO_USER_POOL_ID,
+            "cognito_web_client_id": COGNITO_WEB_CLIENT_ID,
+            "rds_endpoint": RDS_ENDPOINT,
+            "rds_secret_configured": bool(RDS_MASTER_SECRET_ARN),
         }
-        if self.path == "/health":
-            body = {"status": "healthy", "service": SERVICE}
-        data = json.dumps(body).encode("utf-8")
+
+    def session_payload(self, role):
+        return {
+            "role": role,
+            "service": SERVICE,
+            "allowed": role_allowed(role),
+            "allowed_roles": sorted(ROLE_ACCESS.get(SERVICE_KEY, set())),
+            "checked_at": now_iso(),
+        }
+
+    def send_json(self, payload, status=200):
+        data = json_bytes(payload)
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def send_html(self, body, status=200):
+        data = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def render_page(self, parsed):
+        query = parse_qs(parsed.query)
+        role = query.get("role", ["Customer"])[0]
+        allowed = role_allowed(role)
+        db_status = db_probe()
+        access_class = "ok" if allowed else "warn"
+        db_class = "ok" if db_status.get("status") == "reachable" else "warn"
+        role_buttons = "\n".join(self.role_link(label, role) for label in ROLE_LABELS)
+
+        return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FinPay {html.escape(SERVICE)}</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #5d687c;
+      --line: #d9e1ea;
+      --soft: #f5f7fb;
+      --brand: #0f766e;
+      --accent: #b45309;
+      --danger: #b42318;
+      --panel: #ffffff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background: #eef3f7;
+    }}
+    header {{
+      background: #12343b;
+      color: white;
+      padding: 28px clamp(18px, 4vw, 56px);
+    }}
+    main {{
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 3vw, 32px) 44px;
+    }}
+    .eyebrow {{
+      color: #a5f3fc;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }}
+    h1 {{
+      margin: 8px 0 8px;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }}
+    .subtitle {{
+      max-width: 780px;
+      margin: 0;
+      color: #d7e9ed;
+      font-size: 16px;
+      line-height: 1.6;
+    }}
+    .grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }}
+    .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      min-height: 132px;
+    }}
+    .wide {{ grid-column: span 2; }}
+    .label {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }}
+    .value {{
+      margin-top: 8px;
+      font-size: 22px;
+      font-weight: 800;
+      word-break: break-word;
+    }}
+    .small {{
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+    }}
+    .status {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 13px;
+    }}
+    .ok {{
+      background: #dcfce7;
+      color: #166534;
+    }}
+    .warn {{
+      background: #fef3c7;
+      color: #92400e;
+    }}
+    .roles {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }}
+    .roles a {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: white;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .roles a.active {{
+      border-color: var(--brand);
+      background: #ccfbf1;
+      color: #115e59;
+    }}
+    code {{
+      display: block;
+      overflow-x: auto;
+      padding: 12px;
+      border-radius: 8px;
+      background: #111827;
+      color: #e5e7eb;
+      font-size: 13px;
+      line-height: 1.55;
+    }}
+    @media (max-width: 820px) {{
+      .grid {{ grid-template-columns: 1fr; }}
+      .wide {{ grid-column: span 1; }}
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">{html.escape(NAME_PREFIX)} / {html.escape(ENVIRONMENT)}</div>
+    <h1>{html.escape(SERVICE)}</h1>
+    <p class="subtitle">{html.escape(SERVICE_DESCRIPTION)} running behind ALB, Auto Scaling, private EC2, Cognito configuration, and RDS network checks.</p>
+  </header>
+  <main>
+    <section class="grid">
+      <article class="panel">
+        <div class="label">Service health</div>
+        <div class="value">Healthy</div>
+        <div class="status ok">HTTP 200 /health</div>
+      </article>
+      <article class="panel">
+        <div class="label">Selected role</div>
+        <div class="value">{html.escape(role)}</div>
+        <div class="status {access_class}">{"Allowed" if allowed else "Blocked for this service"}</div>
+      </article>
+      <article class="panel">
+        <div class="label">RDS network probe</div>
+        <div class="value">{html.escape(db_status.get("status", "unknown"))}</div>
+        <div class="status {db_class}">Port 5432 check</div>
+      </article>
+      <article class="panel wide">
+        <div class="label">Role test</div>
+        <div class="small">Use these role buttons to verify service-level access expectations without implementing real payment flows.</div>
+        <div class="roles">{role_buttons}</div>
+      </article>
+      <article class="panel">
+        <div class="label">Cognito</div>
+        <div class="small">User pool</div>
+        <div class="value">{html.escape(COGNITO_USER_POOL_ID)}</div>
+        <div class="small">Web client: {html.escape(COGNITO_WEB_CLIENT_ID)}</div>
+      </article>
+      <article class="panel wide">
+        <div class="label">Verification endpoints</div>
+        <code>GET /health
+GET /db-check
+GET /config
+GET /api/session?role=Auditor</code>
+      </article>
+      <article class="panel">
+        <div class="label">Target path</div>
+        <div class="value">{html.escape(SERVICE_PATH)}</div>
+        <div class="small">Current request path: {html.escape(parsed.path)}</div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>"""
+
+    def role_link(self, label, active_role):
+        class_name = "active" if label == active_role else ""
+        return f'<a class="{class_name}" href="?role={html.escape(label)}">{html.escape(label)}</a>'
+
+    def log_message(self, format, *args):
+        return
+
 
 HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
 PY
 
 cat >/etc/systemd/system/finpay.service <<'UNIT'
 [Unit]
-Description=FinPay demo service
+Description=FinPay demo web application
 After=network.target
 
 [Service]
@@ -67,4 +386,3 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now finpay.service
-
