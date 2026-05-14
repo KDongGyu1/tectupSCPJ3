@@ -53,6 +53,10 @@ resource "aws_config_delivery_channel" "main" {
   s3_key_prefix  = "Config"
   s3_kms_key_arn = var.logs_kms_key_arn
 
+  depends_on = [
+    aws_config_configuration_recorder.main,
+    aws_iam_role_policy_attachment.config,
+  ]
 }
 
 resource "aws_config_configuration_recorder_status" "main" {
