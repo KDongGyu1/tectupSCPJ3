@@ -119,7 +119,7 @@ locals {
       name              = "db-instance-backup-enabled"
       source_identifier = "DB_INSTANCE_BACKUP_ENABLED"
       input_parameters = {
-        backupRetentionMinimum = "7"
+        backupRetentionMinimum = "1"
       }
     }
     encrypted_volumes = {
