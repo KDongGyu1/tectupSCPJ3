@@ -71,8 +71,12 @@ module "app" {
   app_desired_capacity      = var.app_desired_capacity
   app_min_size              = var.app_min_size
   app_max_size              = var.app_max_size
+  cognito_user_pool_id      = module.auth.cognito_user_pool_id
+  cognito_web_client_id     = module.auth.cognito_web_client_id
+  rds_endpoint              = module.data.rds_endpoint
+  rds_master_secret_arn     = module.data.rds_master_secret_arn
 
-  depends_on = [module.logging]
+  depends_on = [module.logging, module.auth, module.data]
 }
 
 module "data" {

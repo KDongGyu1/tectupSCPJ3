@@ -14,3 +14,7 @@ variable "app_instance_type" { type = string }
 variable "app_desired_capacity" { type = number }
 variable "app_min_size" { type = number }
 variable "app_max_size" { type = number }
+variable "cognito_user_pool_id" { type = string }
+variable "cognito_web_client_id" { type = string }
+variable "rds_endpoint" { type = string }
+variable "rds_master_secret_arn" { type = string }

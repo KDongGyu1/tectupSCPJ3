@@ -3,8 +3,6 @@ set -euo pipefail
 
 dnf install -y python3
 
-
-# SSM Agent 설치 및 실행 되었는지 확인
 if ! systemctl list-unit-files | grep -q amazon-ssm-agent; then
   dnf install -y amazon-ssm-agent || true
 fi
@@ -12,48 +10,233 @@ fi
 systemctl enable amazon-ssm-agent
 systemctl restart amazon-ssm-agent
 
-
 mkdir -p /opt/finpay
 cat >/opt/finpay/server.py <<'PY'
+import html
 import json
+import socket
+import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
 
 SERVICE = "${service_name}"
-ENVIRONMENT = "${environment}"
+SERVICE_KEY = "${service_key}"
+DESC = "${service_description}"
+PREFIX = "${service_route_prefix}"
+ENV = "${environment}"
+PROJECT = "${name_prefix}"
+USER_POOL = "${cognito_user_pool_id}"
+CLIENT_ID = "${cognito_web_client_id}"
+RDS = "${rds_endpoint}"
+SECRET = "${rds_master_secret_arn}"
+
+ACCESS = {
+    "payment": {"Customer", "Merchant", "SettlementOperator", "OperationsAdmin"},
+    "auth": {"Customer", "Merchant", "OperationsAdmin", "SecurityAdmin"},
+    "ops": {"Auditor", "OperationsAdmin", "SecurityAdmin"},
+}
+ROLES = ["Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin", "SecurityAdmin"]
+PAYMENTS = []
+AUDITS = []
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def route(path):
+    if PREFIX and path.startswith(PREFIX):
+        return path[len(PREFIX):] or "/"
+    return path
+
+
+def allowed(role):
+    return role in ACCESS.get(SERVICE_KEY, set())
+
+
+def db_check():
+    if not RDS:
+        return {"status": "skipped", "reason": "empty rds endpoint"}
+    started = time.time()
+    try:
+        with socket.create_connection((RDS, 5432), timeout=3):
+            return {"status": "reachable", "host": RDS, "port": 5432, "latency_ms": int((time.time() - started) * 1000)}
+    except OSError as exc:
+        return {"status": "unreachable", "host": RDS, "port": 5432, "error": str(exc)}
+
+
+def audit(event_type, role, message):
+    event = {"event_type": event_type, "role": role, "service": SERVICE, "message": message, "created_at": now()}
+    AUDITS.append(event)
+    print(json.dumps(event, ensure_ascii=False), flush=True)
+    return event
+
 
 class Handler(BaseHTTPRequestHandler):
+    server_version = "FinPayDemo/1.1"
+
     def do_GET(self):
-        self._send()
+        parsed = urlparse(self.path)
+        path = route(parsed.path)
+        role = parse_qs(parsed.query).get("role", ["Customer"])[0]
+        if path == "/health":
+            return self.send({"status": "healthy", "service": SERVICE, "environment": ENV})
+        if path == "/config":
+            return self.send({
+                "project": PROJECT,
+                "environment": ENV,
+                "service": SERVICE,
+                "service_key": SERVICE_KEY,
+                "route_prefix": PREFIX,
+                "cognito_user_pool_id": USER_POOL,
+                "cognito_web_client_id": CLIENT_ID,
+                "rds_endpoint": RDS,
+                "rds_secret_configured": bool(SECRET),
+            })
+        if path == "/db-check":
+            audit("db-check", role, "RDS network probe requested")
+            return self.send(db_check())
+        if path == "/api/session":
+            return self.send({"role": role, "service": SERVICE, "allowed": allowed(role), "allowed_roles": sorted(ACCESS.get(SERVICE_KEY, set()))})
+        if path == "/api/payments":
+            return self.send({"items": PAYMENTS[-20:]})
+        if path == "/api/audit":
+            return self.send({"items": AUDITS[-30:]})
+        if path == "/guide":
+            return self.html(self.guide(role))
+        return self.html(self.page(role, path))
 
     def do_POST(self):
-        self._send()
+        parsed = urlparse(self.path)
+        path = route(parsed.path)
+        q = parse_qs(parsed.query)
+        role = q.get("role", ["Customer"])[0]
+        if path == "/api/payments":
+            if role not in {"Customer", "Merchant", "OperationsAdmin"}:
+                audit("payment-create-denied", role, "Unauthorized payment creation attempt")
+                return self.send({"error": "forbidden", "role": role}, 403)
+            payment = {
+                "id": "pay-" + str(len(PAYMENTS) + 1).zfill(4),
+                "amount": 12000 + len(PAYMENTS) * 500,
+                "merchant_id": "merchant-demo",
+                "requested_by": role,
+                "status": "REQUESTED",
+                "created_at": now(),
+            }
+            PAYMENTS.append(payment)
+            audit("payment-created", role, "Demo payment request created")
+            return self.send({"status": "created", "payment": payment}, 201)
+        if path == "/api/audit":
+            event_type = q.get("type", ["manual-audit-event"])[0]
+            return self.send({"status": "created", "latest": audit(event_type, role, "Manual audit event")})
+        return self.send({"error": "not found", "path": path}, 404)
 
     def do_PATCH(self):
-        self._send()
+        parsed = urlparse(self.path)
+        path = route(parsed.path)
+        role = parse_qs(parsed.query).get("role", ["Customer"])[0]
+        if path != "/api/payments/status":
+            return self.send({"error": "not found", "path": path}, 404)
+        if role not in {"SettlementOperator", "OperationsAdmin"}:
+            audit("payment-status-denied", role, "Unauthorized payment status update")
+            return self.send({"error": "forbidden", "role": role}, 403)
+        if PAYMENTS:
+            PAYMENTS[-1].update({"status": "APPROVED", "updated_by": role, "updated_at": now()})
+        audit("payment-status-updated", role, "Payment status updated")
+        return self.send({"status": "updated", "latest": PAYMENTS[-1] if PAYMENTS else None})
 
-    def _send(self):
-        status = 200
-        body = {
-            "service": SERVICE,
-            "environment": ENVIRONMENT,
-            "path": self.path,
-            "status": "ok"
-        }
-        if self.path == "/health":
-            body = {"status": "healthy", "service": SERVICE}
-        data = json.dumps(body).encode("utf-8")
+    def send(self, payload, status=200):
+        data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def html(self, body):
+        data = body.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def shell(self):
+        b = html.escape(PREFIX)
+        return f"""GET {b}/health
+GET {b}/config
+GET {b}/db-check
+GET {b}/api/session?role=Customer
+GET {b}/api/session?role=Auditor
+POST {b}/api/payments?role=Customer
+POST {b}/api/payments?role=Auditor
+PATCH {b}/api/payments/status?role=SettlementOperator
+PATCH {b}/api/payments/status?role=Customer
+POST {b}/api/audit?role=Auditor&type=manual-audit-test
+GET {b}/api/audit"""
+
+    def chrome(self):
+        return """<style>
+body{margin:0;font-family:Arial,sans-serif;background:#eef3f7;color:#172033}header{background:#12423f;color:white;padding:28px 44px}main{max-width:1120px;margin:auto;padding:22px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:white;border:1px solid #d9e1ea;border-radius:8px;padding:16px}.wide{grid-column:span 2}.label{color:#627084;font-size:12px;font-weight:700;text-transform:uppercase}.value{font-size:22px;font-weight:800;margin-top:8px;word-break:break-word}.small{color:#627084;font-size:14px;line-height:1.5}.ok{color:#166534}.bad{color:#92400e}a{display:inline-block;margin:6px 6px 0 0;padding:8px 10px;border:1px solid #d9e1ea;border-radius:8px;text-decoration:none;color:#172033;font-weight:700}pre{background:#111827;color:#e5e7eb;border-radius:8px;padding:12px;overflow:auto}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #d9e1ea;padding:8px;text-align:left}@media(max-width:820px){.grid{grid-template-columns:1fr}.wide{grid-column:span 1}}
+</style>"""
+
+    def role_links(self, role):
+        return "".join(f'<a href="?role={html.escape(r)}">{html.escape(r)}</a>' for r in ROLES)
+
+    def page(self, role, path):
+        state = "allowed" if allowed(role) else "blocked"
+        cls = "ok" if allowed(role) else "bad"
+        db = db_check().get("status", "unknown")
+        return f"""<!doctype html><html><head><meta charset="utf-8"><title>FinPay {html.escape(SERVICE)}</title>{self.chrome()}</head>
+<body><header><div>{html.escape(PROJECT)} / {html.escape(ENV)} / {html.escape(SERVICE_KEY)}</div><h1>{html.escape(SERVICE)}</h1><p>{html.escape(DESC)} demo app for ALB, ASG, Cognito, RDS, IAM, and security policy tests.</p></header>
+<main><section class="grid">
+<div class="card"><div class="label">Health</div><div class="value ok">Healthy</div><p class="small">GET /health returns 200</p></div>
+<div class="card"><div class="label">Selected role</div><div class="value">{html.escape(role)}</div><p class="{cls}">{state}</p></div>
+<div class="card"><div class="label">RDS probe</div><div class="value">{html.escape(db)}</div><p class="small">port 5432 check</p></div>
+<div class="card wide"><div class="label">Role test</div><p class="small">Select a role. This is test login, not real Cognito authentication.</p>{self.role_links(role)}</div>
+<div class="card"><div class="label">Guide</div><div class="value">Test guide</div><p class="small">Use this while testing.</p><a href="{html.escape(PREFIX)}/guide?role={html.escape(role)}">Open guide</a></div>
+<div class="card wide"><div class="label">Commands</div><pre>{self.shell()}</pre></div>
+<div class="card"><div class="label">Cognito</div><p class="small">User Pool</p><div class="value">{html.escape(USER_POOL)}</div><p class="small">Client: {html.escape(CLIENT_ID)}</p></div>
+<div class="card"><div class="label">Request</div><div class="value">{html.escape(path)}</div><p class="small">prefix: {html.escape(PREFIX)}</p></div>
+</section></main></body></html>"""
+
+    def guide(self, role):
+        return f"""<!doctype html><html><head><meta charset="utf-8"><title>FinPay 테스트 가이드</title>{self.chrome()}</head>
+<body><header><h1>FinPay 테스트 가이드</h1><p>{html.escape(SERVICE)} / 선택 역할: {html.escape(role)}</p></header>
+<main>
+<div class="card"><h2>1. 역할 분배</h2><table>
+<tr><th>담당자</th><th>작업</th></tr>
+<tr><td>김동규</td><td>Codex와 함께 앱 제작, 화면 보완, 테스트 가이드 제공</td></tr>
+<tr><td>임지혁</td><td>앱 테스트와 IAM 권한 테스트 수행</td></tr>
+<tr><td>한경윤</td><td>앱 테스트와 보안 정책 검증 수행</td></tr>
+</table><p class="small">감사 로그 분석과 시각화는 앱 테스트와 정책 검증이 끝난 뒤 마지막에 진행합니다.</p></div>
+<div class="card"><h2>2. 앱 테스트 API</h2><pre>{self.shell()}</pre></div>
+<div class="card"><h2>3. 정상 기준</h2><table>
+<tr><th>테스트</th><th>기대 결과</th></tr>
+<tr><td>Health</td><td>200, healthy 반환</td></tr>
+<tr><td>Config</td><td>Cognito/RDS 값 표시</td></tr>
+<tr><td>DB Check</td><td>RDS 5432 reachable</td></tr>
+<tr><td>Payment + Customer</td><td>allowed=true, 결제 생성 201</td></tr>
+<tr><td>Payment + Auditor</td><td>allowed=false, 결제 생성 403</td></tr>
+<tr><td>Ops + Auditor</td><td>allowed=true, 감사 이벤트 200</td></tr>
+</table></div>
+<div class="card"><h2>4. 테스트 범위</h2><p class="small">현재 앱은 role 파라미터 기반 테스트 로그인입니다. 실제 Cognito ID/PW 로그인과 JWT 검증은 구현 범위가 아닙니다. Thunder Client, PowerShell, 브라우저로 정상/비정상 접근을 검증합니다.</p></div>
+</main></body></html>"""
+
+    def log_message(self, fmt, *args):
+        return
+
 
 HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
 PY
 
 cat >/etc/systemd/system/finpay.service <<'UNIT'
 [Unit]
-Description=FinPay demo service
+Description=FinPay demo web application
 After=network.target
 
 [Service]
@@ -67,4 +250,3 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now finpay.service
-
