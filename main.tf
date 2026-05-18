@@ -55,28 +55,33 @@ module "logging" {
 module "app" {
   source = "./modules/app"
 
-  name_prefix               = local.name_prefix
-  environment               = var.environment
-  vpc_id                    = module.network.vpc_id
-  public_subnet_ids         = module.network.public_subnet_ids
-  app_subnet_ids            = module.network.app_subnet_ids
-  alb_sg_id                 = module.security_groups.alb_sg_id
-  app_sg_id                 = module.security_groups.app_sg_id
-  app_instance_profile_name = module.iam.app_instance_profile_name
-  logs_kms_key_arn          = module.kms.logs_kms_key_arn
-  central_logs_bucket       = module.logging.central_logs_bucket
-  enable_alb_access_logs    = var.enable_alb_access_logs
-  alb_certificate_arn       = var.alb_certificate_arn
-  app_instance_type         = var.app_instance_type
-  app_desired_capacity      = var.app_desired_capacity
-  app_min_size              = var.app_min_size
-  app_max_size              = var.app_max_size
-  cognito_user_pool_id      = module.auth.cognito_user_pool_id
-  cognito_web_client_id     = module.auth.cognito_web_client_id
-  rds_endpoint              = module.data.rds_endpoint
-  rds_master_secret_arn     = module.data.rds_master_secret_arn
+  name_prefix                = local.name_prefix
+  environment                = var.environment
+  aws_region                 = var.aws_region
+  vpc_id                     = module.network.vpc_id
+  public_subnet_ids          = module.network.public_subnet_ids
+  app_subnet_ids             = module.network.app_subnet_ids
+  alb_sg_id                  = module.security_groups.alb_sg_id
+  app_sg_id                  = module.security_groups.app_sg_id
+  app_instance_profile_name  = module.iam.app_instance_profile_name
+  logs_kms_key_arn           = module.kms.logs_kms_key_arn
+  central_logs_bucket        = module.logging.central_logs_bucket
+  enable_alb_access_logs     = var.enable_alb_access_logs
+  alb_certificate_arn        = var.alb_certificate_arn
+  app_instance_type          = var.app_instance_type
+  app_desired_capacity       = var.app_desired_capacity
+  app_min_size               = var.app_min_size
+  app_max_size               = var.app_max_size
+  cognito_user_pool_id       = module.auth.cognito_user_pool_id
+  cognito_web_client_id      = module.auth.cognito_web_client_id
+  cognito_hosted_ui_base_url = module.auth.cognito_hosted_ui_base_url
+  app_base_url               = var.app_base_url
+  rds_endpoint               = module.data.rds_endpoint
+  rds_master_secret_arn      = module.data.rds_master_secret_arn
+  app_artifact_bucket        = "${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}"
+  app_artifact_key           = "tmp/server.py"
 
-  depends_on = [module.logging, module.auth, module.data]
+  depends_on = [module.logging, module.data]
 }
 
 module "data" {
@@ -92,8 +97,12 @@ module "data" {
 }
 
 module "auth" {
-  source      = "./modules/auth"
-  name_prefix = local.name_prefix
+  source = "./modules/auth"
+
+  name_prefix           = local.name_prefix
+  account_id            = data.aws_caller_identity.current.account_id
+  app_base_url          = module.app.app_base_url
+  cognito_domain_prefix = var.cognito_domain_prefix
 }
 
 module "waf" {

@@ -3,8 +3,12 @@ output "public_subnet_ids" { value = module.network.public_subnet_ids }
 output "app_subnet_ids" { value = module.network.app_subnet_ids }
 output "db_subnet_ids" { value = module.network.db_subnet_ids }
 output "alb_dns_name" { value = module.app.alb_dns_name }
+output "app_base_url" { value = module.app.app_base_url }
+output "cloudfront_distribution_domain_name" { value = module.app.cloudfront_distribution_domain_name }
 output "cognito_user_pool_id" { value = module.auth.cognito_user_pool_id }
 output "cognito_web_client_id" { value = module.auth.cognito_web_client_id }
+output "cognito_hosted_ui_domain" { value = module.auth.cognito_hosted_ui_domain }
+output "cognito_hosted_ui_base_url" { value = module.auth.cognito_hosted_ui_base_url }
 output "rds_endpoint" { value = module.data.rds_endpoint }
 output "rds_master_secret_arn" {
   value     = module.data.rds_master_secret_arn

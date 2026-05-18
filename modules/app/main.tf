@@ -43,6 +43,55 @@ resource "aws_lb" "app" {
 
 }
 
+resource "aws_cloudfront_distribution" "app" {
+  enabled         = true
+  is_ipv6_enabled = true
+  comment         = "${var.name_prefix} application HTTPS entry point"
+  price_class     = "PriceClass_200"
+
+  origin {
+    domain_name = aws_lb.app.dns_name
+    origin_id   = "${var.name_prefix}-alb-origin"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "${var.name_prefix}-alb-origin"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+
+    forwarded_values {
+      query_string = true
+
+      cookies {
+        forward = "all"
+      }
+    }
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+    minimum_protocol_version       = "TLSv1.2_2021"
+  }
+}
+
 resource "aws_lb_target_group" "app" {
   for_each = local.app_services
 
@@ -109,6 +158,27 @@ resource "aws_lb_listener_rule" "http_paths" {
   }
 }
 
+resource "aws_lb_listener_rule" "http_app_auth_paths" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 5
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app["payment"].arn
+  }
+
+  condition {
+    path_pattern {
+      values = [
+        "/auth/login",
+        "/auth/logout",
+        "/auth/callback",
+        "/auth/cognito/*",
+      ]
+    }
+  }
+}
+
 resource "aws_lb_listener_rule" "https_paths" {
   for_each = var.alb_certificate_arn == "" ? {} : local.app_services
 
@@ -123,6 +193,29 @@ resource "aws_lb_listener_rule" "https_paths" {
   condition {
     path_pattern {
       values = [each.value.path]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "https_app_auth_paths" {
+  count = var.alb_certificate_arn == "" ? 0 : 1
+
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 5
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app["payment"].arn
+  }
+
+  condition {
+    path_pattern {
+      values = [
+        "/auth/login",
+        "/auth/logout",
+        "/auth/callback",
+        "/auth/cognito/*",
+      ]
     }
   }
 }
@@ -152,11 +245,16 @@ resource "aws_launch_template" "app" {
     service_description   = each.value.description
     service_route_prefix  = replace(each.value.path, "/*", "")
     environment           = var.environment
+    aws_region            = var.aws_region
     name_prefix           = var.name_prefix
     cognito_user_pool_id  = var.cognito_user_pool_id
     cognito_web_client_id = var.cognito_web_client_id
+    cognito_hosted_ui_url = var.cognito_hosted_ui_base_url
+    app_base_url          = var.app_base_url != "" ? trimsuffix(var.app_base_url, "/") : "https://${aws_cloudfront_distribution.app.domain_name}"
     rds_endpoint          = var.rds_endpoint
     rds_master_secret_arn = var.rds_master_secret_arn
+    app_artifact_bucket   = var.app_artifact_bucket
+    app_artifact_key      = var.app_artifact_key
   }))
 
   tag_specifications {

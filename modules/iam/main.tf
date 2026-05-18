@@ -36,6 +36,13 @@ resource "aws_iam_role_policy" "app_runtime" {
           "logs:PutLogEvents"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject"
+        ]
+        Resource = "arn:aws:s3:::${var.name_prefix}-tfstate-${var.account_id}/tmp/*"
       }
     ]
   })
