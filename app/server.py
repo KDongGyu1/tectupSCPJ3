@@ -9,12 +9,14 @@ import re
 import socket
 import time
 import uuid
+import base64
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.request import Request, urlopen
 
 
 APP_PORT = int(os.environ.get("FINPAY_PORT", "8088"))
@@ -27,6 +29,8 @@ APP_CONFIG = {
     "storage": os.environ.get("FINPAY_STORAGE", "local"),
     "cognito_user_pool_id": os.environ.get("COGNITO_USER_POOL_ID", ""),
     "cognito_web_client_id": os.environ.get("COGNITO_WEB_CLIENT_ID", ""),
+    "cognito_hosted_ui_url": os.environ.get("COGNITO_HOSTED_UI_URL", ""),
+    "app_base_url": os.environ.get("APP_BASE_URL", ""),
     "database_url": os.environ.get("DATABASE_URL", ""),
     "rds_endpoint": os.environ.get("RDS_ENDPOINT", ""),
     "rds_master_secret_arn": os.environ.get("RDS_MASTER_SECRET_ARN", ""),
@@ -48,18 +52,17 @@ USERS = {
     "settlement@finpay.local": {"name": "정산 담당자", "role": "SettlementOperator"},
     "auditor@finpay.local": {"name": "감사 담당자", "role": "Auditor"},
     "ops@finpay.local": {"name": "운영 관리자", "role": "OperationsAdmin"},
-    "security@finpay.local": {"name": "보안 관리자", "role": "SecurityAdmin"},
 }
 
 NAV_ITEMS = [
-    ("대시보드", "/dashboard", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin", "SecurityAdmin"}),
-    ("내 권한", "/my-access", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin", "SecurityAdmin"}),
+    ("대시보드", "/dashboard", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
+    ("내 권한", "/my-access", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
     ("결제 생성", "/payments/new", {"Customer", "Merchant"}),
     ("결제 승인", "/payments/review", {"SettlementOperator", "OperationsAdmin"}),
     ("결제 내역", "/payments", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
-    ("감사 이벤트", "/audit/events", {"Auditor", "SecurityAdmin", "OperationsAdmin"}),
-    ("보안 상태", "/security/status", {"SecurityAdmin", "OperationsAdmin"}),
-    ("시스템 상태", "/system/status", {"OperationsAdmin", "SecurityAdmin"}),
+    ("감사 이벤트", "/audit/events", {"Auditor", "OperationsAdmin"}),
+    ("보안 상태", "/security/status", {"OperationsAdmin"}),
+    ("시스템 상태", "/system/status", {"OperationsAdmin"}),
 ]
 
 ROLE_DESCRIPTIONS = {
@@ -68,10 +71,9 @@ ROLE_DESCRIPTIONS = {
     "SettlementOperator": "승인 대기 결제를 검토하고 승인 또는 거절합니다.",
     "Auditor": "결제 내역과 감사 이벤트를 조회합니다.",
     "OperationsAdmin": "결제 운영, 감사 조회, 시스템 상태를 관리합니다.",
-    "SecurityAdmin": "보안 상태와 감사 이벤트를 확인하고 차단 이벤트를 기록합니다.",
 }
 
-SESSIONS: dict[str, str] = {}
+SESSIONS: dict[str, dict] = {}
 
 
 def now_iso() -> str:
@@ -501,6 +503,86 @@ def mask_value(value: str) -> str:
     return f"{value[:6]}...{value[-6:]}"
 
 
+def public_base_url(headers) -> str:
+    if APP_CONFIG["app_base_url"]:
+        return APP_CONFIG["app_base_url"].rstrip("/")
+    host = headers.get("Host", f"127.0.0.1:{APP_PORT}")
+    proto = headers.get("X-Forwarded-Proto", "http")
+    return f"{proto}://{host}".rstrip("/")
+
+
+def cognito_redirect_uri(headers) -> str:
+    return f"{public_base_url(headers)}/auth/callback"
+
+
+def cognito_login_url(headers) -> str:
+    query = urlencode(
+        {
+            "client_id": APP_CONFIG["cognito_web_client_id"],
+            "response_type": "code",
+            "scope": "openid email profile",
+            "redirect_uri": cognito_redirect_uri(headers),
+        }
+    )
+    return f"{APP_CONFIG['cognito_hosted_ui_url'].rstrip('/')}/oauth2/authorize?{query}"
+
+
+def cognito_logout_url(headers) -> str:
+    query = urlencode(
+        {
+            "client_id": APP_CONFIG["cognito_web_client_id"],
+            "logout_uri": f"{public_base_url(headers)}/login",
+        }
+    )
+    return f"{APP_CONFIG['cognito_hosted_ui_url'].rstrip('/')}/logout?{query}"
+
+
+def decode_jwt_payload(token: str) -> dict:
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload.encode("utf-8")))
+    except Exception:
+        return {}
+
+
+def exchange_cognito_code(code: str, headers) -> dict:
+    token_url = f"{APP_CONFIG['cognito_hosted_ui_url'].rstrip('/')}/oauth2/token"
+    body = urlencode(
+        {
+            "grant_type": "authorization_code",
+            "client_id": APP_CONFIG["cognito_web_client_id"],
+            "code": code,
+            "redirect_uri": cognito_redirect_uri(headers),
+        }
+    ).encode("utf-8")
+    request = Request(
+        token_url,
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    with urlopen(request, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def cognito_user_from_tokens(tokens: dict) -> dict:
+    id_payload = decode_jwt_payload(tokens.get("id_token", ""))
+    email = id_payload.get("email") or id_payload.get("cognito:username") or "cognito-user"
+    groups = id_payload.get("cognito:groups") or []
+    if isinstance(groups, str):
+        groups = [groups]
+    role = next((group for group in groups if group in ROLE_DESCRIPTIONS), "")
+    if not role:
+        raise ValueError("Cognito group is not mapped to an application role.")
+    return {
+        "email": email,
+        "name": id_payload.get("name") or email,
+        "role": role,
+        "auth_provider": "cognito",
+    }
+
+
 def integration_status() -> dict:
     return {
         "environment": APP_CONFIG["environment"],
@@ -511,8 +593,10 @@ def integration_status() -> dict:
         },
         "cognito": {
             "configured": bool(APP_CONFIG["cognito_user_pool_id"] and APP_CONFIG["cognito_web_client_id"]),
+            "hosted_ui_configured": bool(APP_CONFIG["cognito_hosted_ui_url"]),
             "user_pool_id": APP_CONFIG["cognito_user_pool_id"],
             "web_client_id": APP_CONFIG["cognito_web_client_id"],
+            "hosted_ui_url": APP_CONFIG["cognito_hosted_ui_url"],
         },
         "rds": db_probe(),
         "secrets_manager": {
@@ -581,7 +665,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        if path == "/api/health":
+        if path in ("/health", "/api/health"):
             self.send_json({"status": "healthy", "runtime": "python", "version": "0.1.0"})
             return
 
@@ -603,7 +687,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
             user = self.require_login()
             if not user:
                 return
-            if user["role"] not in {"OperationsAdmin", "SecurityAdmin"}:
+            if user["role"] not in {"OperationsAdmin"}:
                 add_event(user["email"], user["role"], "GET_CONFIG_API", "Denied", "연동 설정 API 접근 권한 없음")
                 self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
                 return
@@ -637,7 +721,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
             user = self.require_login()
             if not user:
                 return
-            if user["role"] not in {"Auditor", "SecurityAdmin", "OperationsAdmin"}:
+            if user["role"] not in {"Auditor", "OperationsAdmin"}:
                 add_event(user["email"], user["role"], "GET_AUDIT_EVENTS_API", "Denied", "감사 이벤트 API 접근 권한 없음")
                 self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
                 return
@@ -651,6 +735,34 @@ class FinPayHandler(BaseHTTPRequestHandler):
 
         if path == "/login":
             self.send_html(self.login_page())
+            return
+
+        if path == "/auth/cognito/start":
+            if not APP_CONFIG["cognito_hosted_ui_url"]:
+                self.send_html(self.login_page("Cognito Hosted UI is not configured."), HTTPStatus.BAD_REQUEST)
+                return
+            self.redirect(cognito_login_url(self.headers))
+            return
+
+        if path == "/auth/callback":
+            code = parse_qs(parsed.query).get("code", [""])[0]
+            if not code:
+                self.send_html(self.login_page("Cognito authorization code is missing."), HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                tokens = exchange_cognito_code(code, self.headers)
+                user = cognito_user_from_tokens(tokens)
+            except Exception as exc:
+                self.send_html(self.login_page(f"Cognito login failed: {exc}"), HTTPStatus.BAD_REQUEST)
+                return
+            sid = uuid.uuid4().hex
+            SESSIONS[sid] = user
+            role = user["role"]
+            add_event(user["email"], user["role"], "COGNITO_LOGIN", "Success", "Cognito Hosted UI login")
+            self.send_response(HTTPStatus.SEE_OTHER)
+            self.send_header("Location", "/dashboard")
+            self.send_header("Set-Cookie", f"finpay_session={sid}; HttpOnly; SameSite=Lax; Path=/")
+            self.end_headers()
             return
 
         user = self.require_login()
@@ -668,9 +780,9 @@ class FinPayHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/export/audit-events.csv":
-            if user["role"] not in {"Auditor", "SecurityAdmin", "OperationsAdmin"}:
+            if user["role"] not in {"Auditor", "OperationsAdmin"}:
                 add_event(user["email"], user["role"], "EXPORT_AUDIT_EVENTS", "Denied", "감사 이벤트 내보내기 권한 없음")
-                self.send_html(self.forbidden_page(user, {"Auditor", "SecurityAdmin", "OperationsAdmin"}), HTTPStatus.FORBIDDEN)
+                self.send_html(self.forbidden_page(user, {"Auditor", "OperationsAdmin"}), HTTPStatus.FORBIDDEN)
                 return
             rows = load_data()["audit_events"]
             add_event(user["email"], user["role"], "EXPORT_AUDIT_EVENTS", "Success", "감사 이벤트 CSV 내보내기")
@@ -678,15 +790,15 @@ class FinPayHandler(BaseHTTPRequestHandler):
             return
 
         routes = {
-            "/dashboard": (self.dashboard_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin", "SecurityAdmin"}),
-            "/my-access": (self.my_access_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin", "SecurityAdmin"}),
+            "/dashboard": (self.dashboard_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
+            "/my-access": (self.my_access_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
             "/payments/new": (self.new_payment_page, {"Customer", "Merchant"}),
             "/payments/review": (self.review_payments_page, {"SettlementOperator", "OperationsAdmin"}),
             "/payments": (self.payment_history_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
             "/detail": (self.payment_detail_from_query_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
-            "/audit/events": (self.audit_events_page, {"Auditor", "SecurityAdmin", "OperationsAdmin"}),
-            "/security/status": (self.security_status_page, {"SecurityAdmin", "OperationsAdmin"}),
-            "/system/status": (self.system_status_page, {"OperationsAdmin", "SecurityAdmin"}),
+            "/audit/events": (self.audit_events_page, {"Auditor", "OperationsAdmin"}),
+            "/security/status": (self.security_status_page, {"OperationsAdmin"}),
+            "/system/status": (self.system_status_page, {"OperationsAdmin"}),
         }
 
         if path not in routes:
@@ -712,8 +824,9 @@ class FinPayHandler(BaseHTTPRequestHandler):
                 self.send_html(self.login_page("등록되지 않은 계정입니다."), HTTPStatus.BAD_REQUEST)
                 return
             sid = uuid.uuid4().hex
-            SESSIONS[sid] = email
-            role = USERS[email]["role"]
+            user = {"email": email, **USERS[email], "auth_provider": "demo"}
+            SESSIONS[sid] = user
+            role = user["role"]
             add_event(email, role, "LOGIN", "Success", "데모 계정 로그인")
             self.send_response(HTTPStatus.SEE_OTHER)
             self.send_header("Location", "/dashboard")
@@ -726,7 +839,10 @@ class FinPayHandler(BaseHTTPRequestHandler):
             if user:
                 add_event(user["email"], user["role"], "LOGOUT", "Success", "로그아웃")
             self.send_response(HTTPStatus.SEE_OTHER)
-            self.send_header("Location", "/login")
+            self.send_header(
+                "Location",
+                cognito_logout_url(self.headers) if user and user.get("auth_provider") == "cognito" and APP_CONFIG["cognito_hosted_ui_url"] else "/login",
+            )
             self.send_header("Set-Cookie", "finpay_session=; Max-Age=0; Path=/")
             self.end_headers()
             return
@@ -811,28 +927,38 @@ class FinPayHandler(BaseHTTPRequestHandler):
         self.send_error_page(HTTPStatus.NOT_FOUND, "결제 건을 찾을 수 없습니다.")
 
     def login_page(self, error: str = "") -> str:
-        options = "".join(
-            f'<option value="{esc(email)}">{esc(info["role"])} - {esc(info["name"])}</option>'
-            for email, info in USERS.items()
-        )
         message = f'<div class="alert danger">{esc(error)}</div>' if error else ""
+        login_action = '<div class="alert danger">Cognito Hosted UI가 아직 설정되지 않았습니다.</div>'
+        if APP_CONFIG["cognito_hosted_ui_url"]:
+            login_action = """
+                <a class="button login-primary" href="/auth/cognito/start">Cognito로 로그인</a>
+                <p class="muted">관리자가 생성한 Cognito 계정으로 로그인합니다. 역할은 Cognito 그룹 기준으로 자동 적용됩니다.</p>
+            """
         return self.page(
             "로그인",
             None,
             f"""
             <section class="login">
-              <div>
-                <p class="eyebrow">FinPay Application</p>
-                <h1>역할 기반 결제 관리</h1>
-                <p>고객 결제 요청부터 정산 승인, 감사 이벤트 확인까지 FinPay 운영 흐름을 제공합니다.</p>
+              <div class="login-copy">
+                <p class="eyebrow">FinPay Console</p>
+                <h1>결제 운영과 보안 감사를 하나의 콘솔에서 관리합니다</h1>
+                <p>CloudFront, Cognito, ALB, Auto Scaling, RDS, Secrets Manager, CloudWatch를 연결한 실제 핀테크 운영 검증 앱입니다.</p>
+                <div class="login-highlights">
+                  <span>역할 기반 접근제어</span>
+                  <span>결제 승인 흐름</span>
+                  <span>감사 이벤트 추적</span>
+                </div>
               </div>
-              <form method="post" action="/auth/login" class="panel">
-                <h2>계정 선택</h2>
+              <section class="panel login-panel">
+                <p class="eyebrow">Secure Sign In</p>
+                <h2>실제 Cognito 로그인</h2>
                 {message}
-                <label>계정</label>
-                <select name="email">{options}</select>
-                <button type="submit">로그인</button>
-              </form>
+                {login_action}
+                <div class="login-note">
+                  <strong>회원가입은 비활성화되어 있습니다.</strong>
+                  <span>테스트 계정은 관리자 CLI에서 생성하고, 역할은 Cognito 그룹으로 배정합니다.</span>
+                </div>
+              </section>
             </section>
             """,
         )
@@ -1221,8 +1347,9 @@ GET http://127.0.0.1:{APP_PORT}/api/audit-events</pre>
         nav = ""
         userbar = ""
         if user:
+            current_path = urlparse(self.path).path
             links = "".join(
-                f'<a href="{path}">{label}</a>'
+                f'<a class="{"active" if current_path == path else ""}" href="{path}">{label}</a>'
                 for label, path in allowed_nav_items(user)
             )
             nav = f"<nav>{links}</nav>"
@@ -1319,10 +1446,10 @@ GET http://127.0.0.1:{APP_PORT}/api/audit-events</pre>
         morsel = cookie.get("finpay_session")
         if not morsel:
             return None
-        email = SESSIONS.get(morsel.value)
-        if not email or email not in USERS:
+        user = SESSIONS.get(morsel.value)
+        if not user:
             return None
-        return {"email": email, **USERS[email]}
+        return user
 
     def require_login(self) -> dict | None:
         user = self.current_user()
@@ -1382,82 +1509,108 @@ GET http://127.0.0.1:{APP_PORT}/api/audit-events</pre>
 STYLE = """
 :root {
   color-scheme: light;
-  --bg: #f5f7fb;
+  --bg: #eef3f7;
   --surface: #ffffff;
-  --line: #d9e0ea;
-  --text: #172033;
-  --muted: #667085;
+  --surface-soft: #f8fafc;
+  --line: #d5dde7;
+  --line-strong: #b8c4d3;
+  --text: #101828;
+  --muted: #5f6f85;
   --primary: #0f766e;
   --primary-dark: #115e59;
+  --accent: #3155a4;
   --danger: #b42318;
   --warning: #b54708;
   --success: #027a48;
+  --shadow: 0 10px 24px rgba(16, 24, 40, .08);
 }
 * { box-sizing: border-box; }
-body { margin: 0; font-family: Arial, "Malgun Gothic", sans-serif; background: var(--bg); color: var(--text); }
-header { height: 64px; display: flex; align-items: center; gap: 18px; padding: 0 28px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; }
-.brand { font-weight: 800; font-size: 22px; color: var(--primary); text-decoration: none; }
+body { margin: 0; font-family: Arial, "Malgun Gothic", sans-serif; background: var(--bg); color: var(--text); font-size: 15px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 260px; background: linear-gradient(135deg, #0f1f2e 0%, #0f766e 54%, #3155a4 100%); z-index: -2; }
+body::after { content: ""; position: fixed; inset: 220px 0 0 0; background: var(--bg); z-index: -2; }
+header { min-height: 68px; display: flex; align-items: center; gap: 18px; padding: 0 28px; background: #0f1f2e; border-bottom: 1px solid #20364b; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 10px rgba(16, 24, 40, .12); }
+.brand { font-weight: 900; font-size: 22px; color: #ffffff; text-decoration: none; letter-spacing: .2px; }
 nav { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
-nav a, .button { color: var(--text); text-decoration: none; padding: 9px 11px; border-radius: 6px; font-size: 14px; }
-nav a:hover, .button:hover { background: #eef7f5; }
-.userbar { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 13px; }
-main { max-width: 1180px; margin: 0 auto; padding: 32px 22px 56px; }
-.title { margin-bottom: 18px; }
-.eyebrow { margin: 0 0 6px; color: var(--primary); text-transform: uppercase; letter-spacing: .04em; font-size: 12px; font-weight: 700; }
-h1 { margin: 0; font-size: 30px; }
-h2 { margin: 0 0 14px; font-size: 18px; }
-p { line-height: 1.6; }
+nav a { color: #dbe6f3; text-decoration: none; padding: 9px 11px; border-radius: 6px; font-size: 14px; }
+nav a:hover { background: #1d3449; color: #ffffff; }
+nav a.active { background: #ffffff; color: #0f1f2e; }
+.button { color: white; text-decoration: none; padding: 10px 14px; border-radius: 6px; font-size: 14px; }
+.userbar { display: flex; gap: 10px; align-items: center; color: #dbe6f3; font-size: 13px; }
+main { max-width: 1180px; margin: 0 auto; padding: 30px 22px 56px; }
+.title { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 18px; padding: 18px 0 20px; color: #ffffff; }
+.title .eyebrow { color: #b7f7ed; }
+.eyebrow { margin: 0 0 6px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; font-size: 12px; font-weight: 800; }
+h1 { margin: 0; font-size: 30px; line-height: 1.2; }
+h2 { margin: 0 0 14px; font-size: 18px; line-height: 1.35; }
+p { line-height: 1.65; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px; }
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px; box-shadow: 0 1px 2px rgba(16, 24, 40, .04); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px; box-shadow: var(--shadow); }
+.panel h2 { color: #14233a; }
 .narrow { max-width: 680px; }
-.hero-panel { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+.hero-panel { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; border-left: 4px solid var(--primary); }
 .hero-panel p { margin-bottom: 0; max-width: 720px; }
-.login { min-height: 74vh; display: grid; grid-template-columns: 1.2fr .8fr; gap: 32px; align-items: center; }
-.login h1 { font-size: 42px; }
-.stack { display: grid; gap: 10px; }
+.login { min-height: 72vh; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr); gap: 34px; align-items: center; color: var(--text); }
+.login h1 { font-size: 44px; max-width: 680px; letter-spacing: 0; }
+.login-copy { padding: 26px 28px; border-radius: 8px; background: rgba(255, 255, 255, .76); border: 1px solid rgba(255, 255, 255, .7); box-shadow: 0 18px 46px rgba(16, 24, 40, .12); }
+.login-copy p:not(.eyebrow) { max-width: 640px; color: #44546a; font-size: 17px; }
+.login-highlights { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.login-highlights span { display: inline-flex; align-items: center; min-height: 34px; padding: 8px 11px; border: 1px solid #c9d6e4; border-radius: 999px; background: #ffffff; color: #17324d; font-size: 13px; font-weight: 800; }
+.login .panel { color: var(--text); border: 0; box-shadow: 0 22px 50px rgba(16, 24, 40, .22); }
+.login-panel { padding: 26px; }
+.login-panel h2 { font-size: 24px; margin-bottom: 18px; }
+.login-primary { width: 100%; text-align: center; padding: 14px 16px; font-size: 16px; margin-bottom: 12px; }
+.login-note { display: grid; gap: 6px; margin-top: 18px; padding: 14px; border-radius: 8px; background: #f4f7fb; border: 1px solid var(--line); color: var(--muted); }
+.login-note strong { color: var(--text); }
+.stack { display: grid; gap: 12px; }
 .filters { display: grid; grid-template-columns: max-content minmax(130px, 180px) max-content minmax(220px, 1fr) max-content max-content; gap: 10px; align-items: end; margin-bottom: 16px; }
 .toolbar { display: flex; justify-content: flex-end; margin: -4px 0 14px; }
 label { font-weight: 700; font-size: 14px; }
-input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 11px 12px; font: inherit; background: white; }
+input, select, textarea { width: 100%; border: 1px solid var(--line-strong); border-radius: 6px; padding: 11px 12px; font: inherit; background: white; color: var(--text); }
+input:focus, select:focus, textarea:focus { outline: 3px solid #cde9e5; border-color: var(--primary); }
 textarea { min-height: 90px; resize: vertical; }
-button, .button { border: 0; background: var(--primary); color: white; border-radius: 6px; padding: 11px 14px; font-weight: 700; cursor: pointer; display: inline-block; }
-button:hover { background: var(--primary-dark); }
+button, .button { border: 0; background: var(--primary); color: white; border-radius: 6px; padding: 11px 14px; font-weight: 800; cursor: pointer; display: inline-block; box-shadow: 0 1px 2px rgba(16, 24, 40, .12); }
+button:hover, .button:hover { background: var(--primary-dark); }
 .small { padding: 8px 10px; font-size: 12px; }
-.secondary { color: var(--text); background: #e8edf4; }
+.secondary { color: var(--text); background: #e7edf5; }
+.secondary:hover { background: #dbe4ef; }
 .danger-btn { background: var(--danger); }
+.danger-btn:hover { background: #912018; }
 .muted { color: var(--muted); margin-top: -4px; }
 .metric span { color: var(--muted); font-size: 14px; }
-.metric strong { display: block; margin-top: 8px; font-size: 30px; }
+.metric strong { display: block; margin-top: 8px; font-size: 30px; line-height: 1.1; }
+.metrics .panel { border-top: 3px solid var(--primary); }
 .state { color: var(--primary); font-weight: 800; }
 .bars { display: grid; gap: 12px; }
 .bar-row { display: grid; grid-template-columns: 110px 1fr 48px; gap: 12px; align-items: center; }
 .bar-row span { color: var(--muted); font-weight: 800; }
 .bar-row strong { text-align: right; }
 .bar { height: 10px; overflow: hidden; background: #edf2f7; border-radius: 999px; }
-.bar i { display: block; height: 100%; background: var(--primary); border-radius: inherit; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
 .detail { max-width: 820px; }
 .detail-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .detail dl { display: grid; grid-template-columns: 140px 1fr; gap: 12px 18px; margin: 0 0 20px; }
 .detail dt { color: var(--muted); font-weight: 800; }
 .detail dd { margin: 0; }
 .detail-actions { margin-bottom: 16px; }
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; overflow: hidden; }
 th, td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
-th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+th { color: var(--muted); font-size: 12px; text-transform: uppercase; background: var(--surface-soft); }
+tbody tr:hover { background: #f7fbfb; }
 .actions { display: flex; gap: 8px; }
-.badge { display: inline-block; padding: 5px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; background: #eef2f6; }
+.badge { display: inline-block; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; background: #eef2f6; }
 .badge.approved, .badge.success { color: var(--success); background: #ecfdf3; }
 .badge.pending { color: var(--warning); background: #fffaeb; }
 .badge.rejected, .badge.denied { color: var(--danger); background: #fef3f2; }
-.alert { border-radius: 6px; padding: 12px; margin-bottom: 14px; }
-.alert.danger { background: #fef3f2; color: var(--danger); }
-.alert.success { background: #ecfdf3; color: var(--success); }
+.alert { border-radius: 6px; padding: 12px; margin-bottom: 14px; border: 1px solid transparent; }
+.alert.danger { background: #fef3f2; color: var(--danger); border-color: #fecdca; }
+.alert.success { background: #ecfdf3; color: var(--success); border-color: #abefc6; }
 .steps { margin: 0; padding-left: 22px; line-height: 1.9; }
-pre { white-space: pre-wrap; background: #101828; color: #e6edf3; padding: 14px; border-radius: 6px; }
+pre { white-space: pre-wrap; background: #111827; color: #e6edf3; padding: 14px; border-radius: 6px; overflow-x: auto; }
 @media (max-width: 820px) {
   header { height: auto; align-items: flex-start; flex-direction: column; padding: 16px; }
   nav { width: 100%; }
   .userbar { width: 100%; justify-content: space-between; }
+  .title { align-items: flex-start; flex-direction: column; }
   .hero-panel { align-items: stretch; flex-direction: column; }
   .filters { grid-template-columns: 1fr; }
   .detail dl { grid-template-columns: 1fr; }
@@ -1469,8 +1622,8 @@ pre { white-space: pre-wrap; background: #101828; color: #e6edf3; padding: 14px;
 
 def main() -> None:
     load_data()
-    server = ThreadingHTTPServer(("127.0.0.1", APP_PORT), FinPayHandler)
-    print(f"FinPay Python app running at http://127.0.0.1:{APP_PORT}")
+    server = ThreadingHTTPServer(("0.0.0.0", APP_PORT), FinPayHandler)
+    print(f"FinPay Python app running at http://0.0.0.0:{APP_PORT}")
     server.serve_forever()
 
 

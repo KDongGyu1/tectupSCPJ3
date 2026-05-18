@@ -118,6 +118,18 @@ variable "alert_email" {
   default     = ""
 }
 
+variable "app_base_url" {
+  description = "Optional public application base URL override used for Cognito Hosted UI callback and logout URLs. Leave empty to use the CloudFront distribution URL."
+  type        = string
+  default     = ""
+}
+
+variable "cognito_domain_prefix" {
+  description = "Optional Cognito hosted UI domain prefix. Must be unique in the AWS region."
+  type        = string
+  default     = ""
+}
+
 variable "enable_alb_access_logs" {
   description = "Enable ALB access logs. Keep false when using the KMS/Object Lock central log bucket because ALB log delivery has stricter S3 requirements."
   type        = bool
