@@ -31,6 +31,7 @@ resource "aws_iam_role_policy" "app_runtime" {
           "kms:Decrypt",
           "kms:DescribeKey",
           "secretsmanager:GetSecretValue",
+          "logs:DescribeLogStreams",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
