@@ -164,7 +164,7 @@ RDS PostgreSQL을 사용합니다.
 - S3 Versioning
 - S3 Public Access Block
 - KMS 기반 서버 측 암호화
-- Object Lock 기능 활성화
+- Object Lock 기능 사용 가능
 - 선택적 기본 보존 기간 설정
 
 개발 환경에서 반복적으로 `destroy`와 `apply`를 수행하는 경우 `enable_log_object_lock = false`를 유지하는 것을 권장합니다.  
@@ -241,10 +241,15 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 │   └── backend/
 │       └── main.tf
 ├── docs/
+│   ├── app-inspection-commands.md
+│   ├── app-operations-compliance.md
+│   ├── app-runtime-standards.md
 │   ├── architecture.md
 │   ├── iam-role-specification.md
 │   ├── network-access-control-compliance.md
-│   └── security-policy-matrix.md
+│   ├── security-policy-matrix.md
+│   ├── team-evidence-template.md
+│   └── terraform-operations-runbook.md
 └── modules/
     ├── app/
     ├── auth/
@@ -260,6 +265,22 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
     ├── vpc_endpoints/
     └── waf/
 ```
+
+> `modules/app`은 Flask/Django 같은 애플리케이션 소스가 아니라, ALB, Target Group, Launch Template, Auto Scaling Group을 구성하는 Terraform 인프라 모듈입니다. 실제 애플리케이션 소스를 추가할 경우 Terraform 모듈과 섞이지 않도록 별도 `app/` 또는 `services/` 디렉터리를 사용하는 것을 권장합니다.
+
+### 문서 파일 설명
+
+| Document | 목적 |
+| --- | --- |
+| `docs/architecture.md` | 전체 AWS 보안 아키텍처와 네트워크 흐름 설명 |
+| `docs/security-policy-matrix.md` | 역할, 권한, 보안 정책 매핑 |
+| `docs/iam-role-specification.md` | IAM Role, AssumeRole, MFA 기반 접근 구조 설명 |
+| `docs/network-access-control-compliance.md` | Security Group, WAF, VPC Endpoint, ALB 우회 접근 점검 기준 |
+| `docs/app-runtime-standards.md` | App 서버 런타임, 포트, health check, 운영 기준 |
+| `docs/app-inspection-commands.md` | App/ALB/EC2/CloudWatch 점검 명령어 모음 |
+| `docs/app-operations-compliance.md` | App 운영 보안과 감사 대응 기준 |
+| `docs/terraform-operations-runbook.md` | Terraform apply/destroy 운영 절차와 주의사항 |
+| `docs/team-evidence-template.md` | 팀 프로젝트 증빙 캡처 및 제출 템플릿 |
 
 ## 5. 모듈 설명
 
@@ -277,7 +298,7 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 | `waf` | ALB용 AWS WAF Web ACL 및 Rule 구성 |
 | `backup` | AWS Backup Vault, Plan, Selection 구성 |
 | `compliance` | GuardDuty, Security Hub, AWS Config 선택적 구성 |
-| `automation` | EventBridge, SNS, Lambda 기반 감사 자동화 구성 |
+| `automation` | EventBridge, SNS, Lambda 기반 감사 자동화 및 보안 이벤트 알림 구성 |
 
 ## 6. 사전 준비
 
