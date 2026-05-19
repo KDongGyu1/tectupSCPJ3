@@ -10,7 +10,7 @@ import socket
 import time
 import uuid
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,23 +49,64 @@ CLOUDWATCH_WARNING = ""
 NAV_ITEMS = [
     ("대시보드", "/dashboard", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
     ("내 권한", "/my-access", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
-    ("결제 생성", "/payments/new", {"Customer", "Merchant"}),
-    ("결제 승인", "/payments/review", {"SettlementOperator", "OperationsAdmin"}),
+    ("결제 생성", "/payments/new", {"Customer"}),
+    ("결제 승인", "/payments/review", {"SettlementOperator"}),
     ("결제 내역", "/payments", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
+    ("정산 조회", "/merchant/settlements", {"Merchant", "OperationsAdmin"}),
     ("감사 이벤트", "/audit/events", {"Auditor", "OperationsAdmin"}),
+    ("가맹점 관리", "/operations/merchants", {"OperationsAdmin"}),
     ("보안 상태", "/security/status", {"OperationsAdmin"}),
     ("시스템 상태", "/system/status", {"OperationsAdmin"}),
 ]
 
 ROLE_DESCRIPTIONS = {
     "Customer": "결제 요청을 생성하고 본인이 요청한 결제 내역을 조회합니다.",
-    "Merchant": "가맹점 결제 요청을 생성하고 본인 관련 결제 내역을 조회합니다.",
+    "Merchant": "가맹점에 접수된 결제 내역과 거래 상태를 조회합니다.",
     "SettlementOperator": "승인 대기 결제를 검토하고 승인 또는 거절합니다.",
     "Auditor": "결제 내역과 감사 이벤트를 조회합니다.",
     "OperationsAdmin": "결제 운영, 감사 조회, 시스템 상태를 관리합니다.",
 }
 
+ROLE_ALIASES = {
+    "Admin": "OperationsAdmin",
+    "Administrator": "OperationsAdmin",
+}
+
+ROLE_ALLOWED_APIS = {
+    "Customer": ["GET /api/me", "GET /api/payments", "POST /payments"],
+    "Merchant": ["GET /api/me", "GET /api/payments", "GET /merchant/settlements", "POST /payments/{id}/refund-request"],
+    "SettlementOperator": ["GET /api/me", "GET /api/payments", "POST /payments/{id}/approve", "POST /payments/{id}/reject"],
+    "Auditor": ["GET /api/me", "GET /api/payments", "GET /api/audit-events"],
+    "OperationsAdmin": ["GET /api/me", "GET /api/payments", "GET /api/audit-events", "GET /api/config", "GET /api/db-check", "GET /operations/merchants", "POST /operations/merchants/assign", "POST /operations/merchants/unassign", "POST /payments/{id}/cancel", "POST /payments/{id}/refund", "POST /payments/{id}/refund-reject", "POST /payments/{id}/settle"],
+}
+
+PAYMENT_STATUSES = ["Pending", "Approved", "Rejected", "RefundRequested", "Refunded", "Cancelled", "Settled"]
+
+STATUS_LABELS = {
+    "Pending": "승인 대기",
+    "Approved": "승인 완료",
+    "Rejected": "거절",
+    "RefundRequested": "환불 요청",
+    "Refunded": "환불 완료",
+    "Cancelled": "취소",
+    "Settled": "정산 완료",
+}
+
+REGISTERED_MERCHANTS = [
+    "FinPay Store",
+    "FinPay Store2",
+    "FinPay Store3",
+]
+
+DEFAULT_MERCHANT_EMAIL = "merchant@finpay.local"
+DEFAULT_MERCHANT_ASSIGNMENTS = [
+    {"email": DEFAULT_MERCHANT_EMAIL, "merchant": "FinPay Store"},
+    {"email": DEFAULT_MERCHANT_EMAIL, "merchant": "FinPay Store3"},
+]
+
 SESSIONS: dict[str, dict] = {}
+RECENT_DENIED_EVENTS: dict[tuple[str, str, str], float] = {}
+KST = timezone(timedelta(hours=9), "KST")
 
 
 def now_iso() -> str:
@@ -74,6 +115,29 @@ def now_iso() -> str:
 
 def esc(value: object) -> str:
     return html.escape(str(value), quote=True)
+
+
+def default_merchant_assignments() -> list[dict]:
+    return [dict(item) for item in DEFAULT_MERCHANT_ASSIGNMENTS]
+
+
+def normalize_data(data: dict) -> dict:
+    data.setdefault("payments", [])
+    data.setdefault("audit_events", [])
+    assignments = data.get("merchant_assignments")
+    if assignments is None:
+        assignments = default_merchant_assignments()
+    normalized = []
+    seen = set()
+    for assignment in assignments:
+        email = str(assignment.get("email", "")).strip().lower()
+        merchant = str(assignment.get("merchant", "")).strip()
+        key = (email, merchant)
+        if email and merchant in REGISTERED_MERCHANTS and key not in seen:
+            normalized.append({"email": email, "merchant": merchant})
+            seen.add(key)
+    data["merchant_assignments"] = normalized
+    return data
 
 
 def seed_data() -> dict:
@@ -100,6 +164,7 @@ def seed_data() -> dict:
                 "detail": "로컬 Python 앱 데이터 초기화",
             }
         ],
+        "merchant_assignments": default_merchant_assignments(),
     }
 
 
@@ -112,15 +177,16 @@ def load_data() -> dict:
 
     if not DATA_PATH.exists():
         DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
-        seed = seed_data()
+        seed = normalize_data(seed_data())
         save_data(seed)
         return seed
 
     with DATA_PATH.open("r", encoding="utf-8") as fp:
-        return json.load(fp)
+        return normalize_data(json.load(fp))
 
 
 def save_data(data: dict) -> None:
+    data = normalize_data(data)
     if APP_CONFIG["storage"] == "postgres":
         try:
             postgres_save_data(data)
@@ -161,6 +227,16 @@ def add_event(actor: str, role: str, action: str, result: str, detail: str) -> N
 def set_storage_warning(message: str) -> None:
     global STORAGE_WARNING
     STORAGE_WARNING = message
+
+
+def add_denied_event_once(actor: str, role: str, action: str, detail: str, window_seconds: int = 2) -> None:
+    key = (actor, role, action)
+    current = time.time()
+    previous = RECENT_DENIED_EVENTS.get(key, 0)
+    if current - previous < window_seconds:
+        return
+    RECENT_DENIED_EVENTS[key] = current
+    add_event(actor, role, action, "Denied", detail)
 
 
 def set_cloudwatch_warning(message: str) -> None:
@@ -336,6 +412,15 @@ def ensure_postgres_schema() -> None:
                 )
                 """
             )
+            cur.execute(
+                """
+                create table if not exists merchant_assignments (
+                  email text not null,
+                  merchant text not null,
+                  primary key (email, merchant)
+                )
+                """
+            )
 
 
 def postgres_load_data() -> dict:
@@ -370,16 +455,28 @@ def postgres_load_data() -> dict:
                 }
                 for row in cur.fetchall()
             ]
+            cur.execute("select email, merchant from merchant_assignments order by email, merchant")
+            merchant_assignments = [
+                {"email": row[0], "merchant": row[1]}
+                for row in cur.fetchall()
+            ]
 
     if not payments and not audit_events:
-        seed = seed_data()
+        seed = normalize_data(seed_data())
         postgres_save_data(seed)
         return seed
-    return {"payments": payments, "audit_events": audit_events}
+    should_seed_assignments = not merchant_assignments
+    if should_seed_assignments:
+        merchant_assignments = default_merchant_assignments()
+    data = normalize_data({"payments": payments, "audit_events": audit_events, "merchant_assignments": merchant_assignments})
+    if should_seed_assignments:
+        postgres_save_data(data)
+    return data
 
 
 def postgres_save_data(data: dict) -> None:
     ensure_postgres_schema()
+    data = normalize_data(data)
     with postgres_connect() as conn:
         with conn.cursor() as cur:
             cur.execute("delete from payments")
@@ -409,6 +506,16 @@ def postgres_save_data(data: dict) -> None:
                     values (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     (event["id"], event["time"], event["actor"], event["role"], event["action"], event["result"], event["detail"]),
+                )
+            cur.execute("delete from merchant_assignments")
+            for assignment in data["merchant_assignments"]:
+                cur.execute(
+                    """
+                    insert into merchant_assignments (email, merchant)
+                    values (%s, %s)
+                    on conflict do nothing
+                    """,
+                    (assignment["email"], assignment["merchant"]),
                 )
 
 
@@ -441,12 +548,79 @@ def format_money(amount: int) -> str:
     return f"{amount:,} KRW"
 
 
+def format_datetime(value: object) -> str:
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return "-"
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+    except ValueError:
+        return text
+
+
+def approved_amount(payments: list[dict]) -> int:
+    return sum(p["amount"] for p in payments if p["status"] == "Approved")
+
+
+def settlement_amount(payments: list[dict]) -> int:
+    return sum(p["amount"] for p in payments if p["status"] == "Settled")
+
+
+def status_label(status: str) -> str:
+    return STATUS_LABELS.get(status, status)
+
+
+def normalize_role(role: str) -> str:
+    return ROLE_ALIASES.get(role, role)
+
+
+def actor_label(viewer: dict, email: str) -> str:
+    if not email or email == "-":
+        return "-"
+    if email == viewer["email"]:
+        return "본인"
+    if viewer["role"] in {"Customer", "Merchant"}:
+        return "FinPay 운영팀" if email == "ops@finpay.local" else mask_value(email)
+    return email
+
+
+def merchant_assignment_map(data: dict) -> dict[str, set[str]]:
+    assignments: dict[str, set[str]] = {}
+    for assignment in normalize_data(data).get("merchant_assignments", []):
+        assignments.setdefault(assignment["email"], set()).add(assignment["merchant"])
+    return assignments
+
+
+def assigned_merchants(user: dict, data: dict | None = None) -> set[str]:
+    if user["role"] == "Merchant":
+        source = data if data is not None else load_data()
+        return merchant_assignment_map(source).get(user["email"].lower(), set())
+    return set(REGISTERED_MERCHANTS)
+
+
 def visible_payments(data: dict, user: dict) -> list[dict]:
-    if user["role"] in {"Customer", "Merchant"}:
+    if user["role"] == "Customer":
         return [p for p in data["payments"] if p["created_by"] == user["email"]]
+    if user["role"] == "Merchant":
+        merchant_names = assigned_merchants(user, data)
+        return [p for p in data["payments"] if p["merchant"] in merchant_names]
     if user["role"] in {"SettlementOperator", "Auditor", "OperationsAdmin"}:
         return list(data["payments"])
     return []
+
+
+def visible_audit_events(data: dict, user: dict) -> list[dict]:
+    if user["role"] in {"Auditor", "OperationsAdmin"}:
+        return list(data["audit_events"])
+    payments = visible_payments(data, user)
+    visible_ids = {p["id"] for p in payments}
+    return [
+        event for event in data["audit_events"]
+        if event["actor"] == user["email"] or any(payment_id in event["detail"] for payment_id in visible_ids)
+    ]
 
 
 def find_visible_payment(data: dict, user: dict, payment_id: str) -> dict | None:
@@ -473,11 +647,7 @@ def filter_payments(payments: list[dict], status: str, keyword: str) -> list[dic
 
 
 def count_by_status(payments: list[dict]) -> dict[str, int]:
-    return {
-        "Pending": sum(1 for p in payments if p["status"] == "Pending"),
-        "Approved": sum(1 for p in payments if p["status"] == "Approved"),
-        "Rejected": sum(1 for p in payments if p["status"] == "Rejected"),
-    }
+    return {status: sum(1 for p in payments if p["status"] == status) for status in PAYMENT_STATUSES}
 
 
 def count_by_result(events: list[dict]) -> dict[str, int]:
@@ -564,12 +734,12 @@ def cognito_user_from_tokens(tokens: dict) -> dict:
     groups = id_payload.get("cognito:groups") or []
     if isinstance(groups, str):
         groups = [groups]
-    role = next((group for group in groups if group in ROLE_DESCRIPTIONS), "")
+    role = next((normalize_role(group) for group in groups if normalize_role(group) in ROLE_DESCRIPTIONS), "")
     if not role:
         raise ValueError("Cognito group is not mapped to an application role.")
     return {
         "email": email,
-        "name": id_payload.get("name") or email,
+        "name": id_payload.get("name") or email.split("@")[0],
         "role": role,
         "auth_provider": "cognito",
     }
@@ -794,11 +964,13 @@ class FinPayHandler(BaseHTTPRequestHandler):
         routes = {
             "/dashboard": (self.dashboard_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
             "/my-access": (self.my_access_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
-            "/payments/new": (self.new_payment_page, {"Customer", "Merchant"}),
-            "/payments/review": (self.review_payments_page, {"SettlementOperator", "OperationsAdmin"}),
+            "/payments/new": (self.new_payment_page, {"Customer"}),
+            "/payments/review": (self.review_payments_page, {"SettlementOperator"}),
             "/payments": (self.payment_history_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
             "/detail": (self.payment_detail_from_query_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
+            "/merchant/settlements": (self.merchant_settlements_page, {"Merchant", "OperationsAdmin"}),
             "/audit/events": (self.audit_events_page, {"Auditor", "OperationsAdmin"}),
+            "/operations/merchants": (self.merchant_admin_page, {"OperationsAdmin"}),
             "/security/status": (self.security_status_page, {"OperationsAdmin"}),
             "/system/status": (self.system_status_page, {"OperationsAdmin"}),
         }
@@ -809,7 +981,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
 
         page, allowed_roles = routes[path]
         if user["role"] not in allowed_roles:
-            add_event(user["email"], user["role"], f"GET {path}", "Denied", "권한 없는 화면 접근")
+            add_denied_event_once(user["email"], user["role"], f"GET {path}", "권한 없는 화면 접근")
             self.send_html(self.forbidden_page(user, allowed_roles), HTTPStatus.FORBIDDEN)
             return
 
@@ -841,26 +1013,49 @@ class FinPayHandler(BaseHTTPRequestHandler):
             self.create_payment(user, form)
             return
 
+        if path == "/operations/merchants/assign":
+            self.assign_merchant(user, form)
+            return
+
+        if path == "/operations/merchants/unassign":
+            self.unassign_merchant(user, form)
+            return
+
         approve_match = re.fullmatch(r"/payments/([^/]+)/approve", path)
         reject_match = re.fullmatch(r"/payments/([^/]+)/reject", path)
+        cancel_match = re.fullmatch(r"/payments/([^/]+)/cancel", path)
+        settle_match = re.fullmatch(r"/payments/([^/]+)/settle", path)
+        refund_request_match = re.fullmatch(r"/payments/([^/]+)/refund-request", path)
+        refund_match = re.fullmatch(r"/payments/([^/]+)/refund", path)
+        refund_reject_match = re.fullmatch(r"/payments/([^/]+)/refund-reject", path)
         if approve_match:
             self.update_payment_status(user, approve_match.group(1), "Approved")
             return
         if reject_match:
             self.update_payment_status(user, reject_match.group(1), "Rejected")
             return
-
-        if path == "/security/test-denied-access":
-            add_event(user["email"], user["role"], "DENIED_ACCESS_SIMULATION", "Denied", "권한 차단 이벤트 생성")
-            self.redirect("/security/status?tested=1")
+        if cancel_match:
+            self.update_payment_status(user, cancel_match.group(1), "Cancelled")
+            return
+        if settle_match:
+            self.update_payment_status(user, settle_match.group(1), "Settled")
+            return
+        if refund_request_match:
+            self.update_payment_status(user, refund_request_match.group(1), "RefundRequested")
+            return
+        if refund_match:
+            self.update_payment_status(user, refund_match.group(1), "Refunded")
+            return
+        if refund_reject_match:
+            self.reject_refund_request(user, refund_reject_match.group(1))
             return
 
         self.send_error_page(HTTPStatus.NOT_FOUND, "요청 경로를 찾을 수 없습니다.")
 
     def create_payment(self, user: dict, form: dict[str, list[str]]) -> None:
-        if user["role"] not in {"Customer", "Merchant"}:
+        if user["role"] != "Customer":
             add_event(user["email"], user["role"], "CREATE_PAYMENT", "Denied", "결제 생성 권한 없음")
-            self.send_html(self.forbidden_page(user, {"Customer", "Merchant"}), HTTPStatus.FORBIDDEN)
+            self.send_html(self.forbidden_page(user, {"Customer"}), HTTPStatus.FORBIDDEN)
             return
 
         merchant = form.get("merchant", [""])[0].strip()
@@ -871,8 +1066,12 @@ class FinPayHandler(BaseHTTPRequestHandler):
         except ValueError:
             amount = 0
 
-        if not merchant or amount <= 0:
-            self.send_html(self.new_payment_page(user, "가맹점명과 1원 이상의 금액을 입력해야 합니다."), HTTPStatus.BAD_REQUEST)
+        if merchant not in REGISTERED_MERCHANTS:
+            self.send_html(self.new_payment_page(user, "등록된 가맹점을 선택해야 합니다."), HTTPStatus.BAD_REQUEST)
+            return
+
+        if amount <= 0:
+            self.send_html(self.new_payment_page(user, "1원 이상의 금액을 입력해야 합니다."), HTTPStatus.BAD_REQUEST)
             return
 
         data = load_data()
@@ -894,23 +1093,119 @@ class FinPayHandler(BaseHTTPRequestHandler):
         self.redirect("/payments?msg=created")
 
     def update_payment_status(self, user: dict, payment_id: str, status: str) -> None:
-        if user["role"] not in {"SettlementOperator", "OperationsAdmin"}:
-            add_event(user["email"], user["role"], f"{status.upper()}_PAYMENT", "Denied", "결제 승인 권한 없음")
-            self.send_html(self.forbidden_page(user, {"SettlementOperator", "OperationsAdmin"}), HTTPStatus.FORBIDDEN)
+        allowed_roles = {
+            "Approved": {"SettlementOperator"},
+            "Rejected": {"SettlementOperator"},
+            "RefundRequested": {"Merchant"},
+            "Refunded": {"OperationsAdmin"},
+            "Cancelled": {"OperationsAdmin"},
+            "Settled": {"OperationsAdmin"},
+        }.get(status, {"OperationsAdmin"})
+        if user["role"] not in allowed_roles:
+            add_event(user["email"], user["role"], f"{status.upper()}_PAYMENT", "Denied", "거래 상태 변경 권한 없음")
+            self.send_html(self.forbidden_page(user, allowed_roles), HTTPStatus.FORBIDDEN)
             return
 
         data = load_data()
         for payment in data["payments"]:
             if payment["id"] == payment_id:
+                if user["role"] == "Merchant" and payment["merchant"] not in assigned_merchants(user, data):
+                    add_event(user["email"], user["role"], f"{status.upper()}_PAYMENT", "Denied", f"{payment_id} 담당 가맹점 아님")
+                    self.send_html(self.forbidden_page(user, {"Merchant"}), HTTPStatus.FORBIDDEN)
+                    return
+                if status in {"Approved", "Rejected"} and payment["status"] != "Pending":
+                    self.send_error_page(HTTPStatus.BAD_REQUEST, "승인 대기 결제만 승인 또는 거절할 수 있습니다.")
+                    return
+                if status == "RefundRequested" and payment["status"] not in {"Approved", "Settled"}:
+                    self.send_error_page(HTTPStatus.BAD_REQUEST, "승인 또는 정산 완료 결제만 환불 요청할 수 있습니다.")
+                    return
+                if status == "Refunded" and payment["status"] != "RefundRequested":
+                    self.send_error_page(HTTPStatus.BAD_REQUEST, "환불 요청 상태의 결제만 환불 처리할 수 있습니다.")
+                    return
+                if status == "Settled" and payment["status"] != "Approved":
+                    self.send_error_page(HTTPStatus.BAD_REQUEST, "승인 완료 결제만 정산 완료 처리할 수 있습니다.")
+                    return
+                if status == "Cancelled" and payment["status"] in {"Refunded", "Settled", "Cancelled"}:
+                    self.send_error_page(HTTPStatus.BAD_REQUEST, "이미 최종 처리된 결제는 취소할 수 없습니다.")
+                    return
                 payment["status"] = status
                 payment["reviewed_by"] = user["email"]
                 payment["reviewed_at"] = now_iso()
                 save_data(data)
-                add_event(user["email"], user["role"], f"{status.upper()}_PAYMENT", "Success", f"{payment_id} 처리")
-                message = "approved" if status == "Approved" else "rejected"
-                self.redirect(f"/payments/review?msg={message}")
+                add_event(user["email"], user["role"], f"{status.upper()}_PAYMENT", "Success", f"{payment_id} {status_label(status)} 처리")
+                message = {
+                    "Approved": "approved",
+                    "Rejected": "rejected",
+                    "RefundRequested": "refund_requested",
+                    "Refunded": "refunded",
+                    "Cancelled": "cancelled",
+                    "Settled": "settled",
+                }.get(status, "updated")
+                target = "/payments/review" if status in {"Approved", "Rejected"} else f"/detail?id={payment_id}"
+                separator = "&" if "?" in target else "?"
+                self.redirect(f"{target}{separator}msg={message}")
                 return
         self.send_error_page(HTTPStatus.NOT_FOUND, "결제 건을 찾을 수 없습니다.")
+
+    def reject_refund_request(self, user: dict, payment_id: str) -> None:
+        if user["role"] != "OperationsAdmin":
+            add_event(user["email"], user["role"], "REJECT_REFUND_REQUEST", "Denied", "환불 반려 권한 없음")
+            self.send_html(self.forbidden_page(user, {"OperationsAdmin"}), HTTPStatus.FORBIDDEN)
+            return
+
+        data = load_data()
+        for payment in data["payments"]:
+            if payment["id"] == payment_id:
+                if payment["status"] != "RefundRequested":
+                    self.send_error_page(HTTPStatus.BAD_REQUEST, "환불 요청 상태의 결제만 환불 반려할 수 있습니다.")
+                    return
+                payment["status"] = "Approved"
+                payment["reviewed_by"] = user["email"]
+                payment["reviewed_at"] = now_iso()
+                save_data(data)
+                add_event(user["email"], user["role"], "REJECT_REFUND_REQUEST", "Success", f"{payment_id} 환불 반려")
+                self.redirect(f"/detail?id={payment_id}&msg=refund_rejected")
+                return
+        self.send_error_page(HTTPStatus.NOT_FOUND, "결제 건을 찾을 수 없습니다.")
+
+    def assign_merchant(self, user: dict, form: dict[str, list[str]]) -> None:
+        if user["role"] != "OperationsAdmin":
+            add_event(user["email"], user["role"], "ASSIGN_MERCHANT", "Denied", "가맹점 배정 권한 없음")
+            self.send_html(self.forbidden_page(user, {"OperationsAdmin"}), HTTPStatus.FORBIDDEN)
+            return
+
+        email = form.get("email", [""])[0].strip().lower()
+        merchant = form.get("merchant", [""])[0].strip()
+        if not email or "@" not in email or merchant not in REGISTERED_MERCHANTS:
+            self.send_error_page(HTTPStatus.BAD_REQUEST, "Merchant 이메일과 등록 가맹점을 올바르게 선택해야 합니다.")
+            return
+
+        data = load_data()
+        assignments = data["merchant_assignments"]
+        if not any(a["email"] == email and a["merchant"] == merchant for a in assignments):
+            assignments.append({"email": email, "merchant": merchant})
+            save_data(data)
+            add_event(user["email"], user["role"], "ASSIGN_MERCHANT", "Success", f"{email} -> {merchant}")
+        self.redirect("/operations/merchants?msg=merchant_assigned")
+
+    def unassign_merchant(self, user: dict, form: dict[str, list[str]]) -> None:
+        if user["role"] != "OperationsAdmin":
+            add_event(user["email"], user["role"], "UNASSIGN_MERCHANT", "Denied", "가맹점 배정 해제 권한 없음")
+            self.send_html(self.forbidden_page(user, {"OperationsAdmin"}), HTTPStatus.FORBIDDEN)
+            return
+
+        email = form.get("email", [""])[0].strip().lower()
+        merchant = form.get("merchant", [""])[0].strip()
+        data = load_data()
+        before = len(data["merchant_assignments"])
+        data["merchant_assignments"] = [
+            assignment for assignment in data["merchant_assignments"]
+            if not (assignment["email"] == email and assignment["merchant"] == merchant)
+        ]
+        if len(data["merchant_assignments"]) != before:
+            save_data(data)
+            add_event(user["email"], user["role"], "UNASSIGN_MERCHANT", "Success", f"{email} -> {merchant}")
+        self.redirect("/operations/merchants?msg=merchant_unassigned")
 
     def login_page(self, error: str = "") -> str:
         message = f'<div class="alert danger">{esc(error)}</div>' if error else ""
@@ -955,10 +1250,10 @@ class FinPayHandler(BaseHTTPRequestHandler):
         payment_counts = count_by_status(payments)
         pending = payment_counts["Pending"]
         approved = payment_counts["Approved"]
-        denied = sum(1 for e in data["audit_events"] if e["result"] == "Denied")
-        total_amount = sum(p["amount"] for p in payments)
-        recent_rows = "".join(self.payment_row(p) for p in payments[:5]) or '<tr><td colspan="6">표시할 결제가 없습니다.</td></tr>'
-        primary_link = '<a class="button" href="/payments/new">결제 생성</a>' if user["role"] in {"Customer", "Merchant"} else '<a class="button" href="/payments">결제 내역</a>'
+        denied = sum(1 for e in visible_audit_events(data, user) if e["result"] == "Denied")
+        total_amount = approved_amount(payments)
+        recent_rows = "".join(self.payment_row(p, user) for p in payments[:5]) or '<tr><td colspan="7">표시할 결제가 없습니다.</td></tr>'
+        primary_link = '<a class="button" href="/payments/new">결제 생성</a>' if user["role"] == "Customer" else '<a class="button" href="/payments">결제 내역</a>'
         return self.page(
             "대시보드",
             user,
@@ -967,17 +1262,17 @@ class FinPayHandler(BaseHTTPRequestHandler):
               {self.metric("표시 결제", len(payments))}
               {self.metric("승인 대기", pending)}
               {self.metric("승인 완료", approved)}
-              {self.metric("총 결제 금액", format_money(total_amount))}
+              {self.metric("승인 결제 금액", format_money(total_amount))}
             </div>
             <section class="panel hero-panel">
               <div>
                 <h2>오늘의 운영 현황</h2>
-                <p>현재 역할에서 확인 가능한 결제 요청, 승인 상태, 감사 이벤트를 기준으로 서비스 상태를 확인합니다.</p>
+                <p>현재 역할에서 조회 가능한 거래와 승인 완료 금액을 기준으로 운영 상태를 확인합니다.</p>
               </div>
               {primary_link}
             </section>
             <section class="grid">
-              {self.status_card("결제 업무", "운영 중", "고객과 가맹점은 결제 요청을 생성하고 정산 담당자는 승인 또는 거절합니다.")}
+              {self.status_card("결제 업무", "운영 중", "고객은 결제를 요청하고 정산 담당자는 승인 또는 거절합니다.")}
               {self.status_card("접근 제어", "역할 기반", "사용자 역할에 따라 메뉴와 화면 접근 권한이 분리됩니다.")}
               {self.status_card("감사 추적", f"{denied}건 차단", "로그인, 결제 처리, 차단 이벤트가 감사 이벤트로 기록됩니다.")}
             </section>
@@ -988,7 +1283,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
             <section class="panel">
               <h2>최근 결제</h2>
               <table>
-                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성자</th><th>상세</th></tr></thead>
+                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성 시간</th><th>생성자</th><th>상세</th></tr></thead>
                 <tbody>{recent_rows}</tbody>
               </table>
             </section>
@@ -1000,6 +1295,12 @@ class FinPayHandler(BaseHTTPRequestHandler):
             f"<tr><td>{esc(label)}</td><td><code>{esc(path)}</code></td></tr>"
             for label, path in allowed_nav_items(user)
         )
+        allowed_api_rows = "".join(
+            f"<tr><td><code>{esc(api)}</code></td></tr>"
+            for api in ROLE_ALLOWED_APIS[user["role"]]
+        )
+        allowed_api_count = len(ROLE_ALLOWED_APIS[user["role"]])
+        merchant_scope = ", ".join(sorted(assigned_merchants(user))) if user["role"] == "Merchant" else "해당 없음"
         denied_rows = "".join(
             f"<tr><td>{esc(label)}</td><td><code>{esc(path)}</code></td></tr>"
             for label, path, roles in NAV_ITEMS
@@ -1010,15 +1311,23 @@ class FinPayHandler(BaseHTTPRequestHandler):
             user,
             f"""
             <section class="grid">
-              {self.status_card("사용자", user["name"], user["email"])}
+              {self.status_card("사용자", user["email"], "로그인 계정")}
               {self.status_card("역할", user["role"], ROLE_DESCRIPTIONS[user["role"]])}
-              {self.status_card("접근 정책", "역할 기반", "메뉴와 주요 API는 현재 역할에 따라 허용됩니다.")}
+              {self.status_card("허용 API", f"{allowed_api_count}개", "아래 목록의 API만 현재 역할에서 사용할 수 있습니다.")}
             </section>
+            {"".join([f'<section class="panel"><h2>담당 가맹점</h2><p>{esc(merchant_scope)}</p></section>']) if user["role"] == "Merchant" else ""}
             <section class="panel">
               <h2>허용된 메뉴</h2>
               <table>
                 <thead><tr><th>기능</th><th>경로</th></tr></thead>
                 <tbody>{allowed_rows}</tbody>
+              </table>
+            </section>
+            <section class="panel">
+              <h2>허용된 API</h2>
+              <table>
+                <thead><tr><th>API</th></tr></thead>
+                <tbody>{allowed_api_rows}</tbody>
               </table>
             </section>
             <section class="panel">
@@ -1033,6 +1342,10 @@ class FinPayHandler(BaseHTTPRequestHandler):
 
     def new_payment_page(self, user: dict, error: str = "") -> str:
         message = f'<div class="alert danger">{esc(error)}</div>' if error else ""
+        merchant_options = "".join(
+            f'<option value="{esc(merchant)}">{esc(merchant)}</option>'
+            for merchant in REGISTERED_MERCHANTS
+        )
         return self.page(
             "결제 생성",
             user,
@@ -1041,8 +1354,8 @@ class FinPayHandler(BaseHTTPRequestHandler):
               <h2>새 결제 요청</h2>
               {message}
               <form method="post" action="/payments" class="stack">
-                <label>가맹점명</label>
-                <input name="merchant" value="FinPay Store" required>
+                <label>가맹점</label>
+                <select name="merchant" required>{merchant_options}</select>
                 <label>금액</label>
                 <input name="amount" type="number" min="1" value="75000" required>
                 <label>메모</label>
@@ -1083,10 +1396,10 @@ class FinPayHandler(BaseHTTPRequestHandler):
         payments = filter_payments(visible_payments(data, user), selected_status, keyword)
         payment_counts = count_by_status(payments)
         status_options = "".join(
-            f'<option value="{esc(value)}" {"selected" if selected_status == value else ""}>{esc(value)}</option>'
-            for value in ["All", "Pending", "Approved", "Rejected"]
+            f'<option value="{esc(value)}" {"selected" if selected_status == value else ""}>{esc(status_label(value) if value != "All" else "All")}</option>'
+            for value in ["All", *PAYMENT_STATUSES]
         )
-        rows = "".join(self.payment_row(p) for p in payments) or '<tr><td colspan="6">표시할 결제가 없습니다.</td></tr>'
+        rows = "".join(self.payment_row(p, user) for p in payments) or '<tr><td colspan="7">표시할 결제가 없습니다.</td></tr>'
         notice = self.flash_message()
         return self.page(
             "결제 내역",
@@ -1107,7 +1420,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
                 <a class="button secondary" href="/payments">초기화</a>
               </form>
               <table>
-                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성자</th><th>상세</th></tr></thead>
+                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성 시간</th><th>생성자</th><th>상세</th></tr></thead>
                 <tbody>{rows}</tbody>
               </table>
             </section>
@@ -1127,19 +1440,39 @@ class FinPayHandler(BaseHTTPRequestHandler):
             return self.forbidden_page(user, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}), HTTPStatus.FORBIDDEN
 
         review = ""
-        if payment["status"] == "Pending" and user["role"] in {"SettlementOperator", "OperationsAdmin"}:
+        if payment["status"] == "Pending" and user["role"] == "SettlementOperator":
             review = f"""
             <div class="actions detail-actions">
               <form method="post" action="/payments/{esc(payment["id"])}/approve"><button type="submit">승인</button></form>
               <form method="post" action="/payments/{esc(payment["id"])}/reject"><button type="submit" class="danger-btn">거절</button></form>
             </div>
             """
+        if payment["status"] in {"Approved", "Settled"} and user["role"] == "Merchant" and payment["merchant"] in assigned_merchants(user, data):
+            review += f"""
+            <div class="actions detail-actions">
+              <form method="post" action="/payments/{esc(payment["id"])}/refund-request"><button type="submit" class="secondary">환불 요청</button></form>
+            </div>
+            """
+        if payment["status"] == "Approved" and user["role"] == "OperationsAdmin":
+            review += f"""
+            <div class="actions detail-actions">
+              <form method="post" action="/payments/{esc(payment["id"])}/settle"><button type="submit">정산 완료</button></form>
+              <form method="post" action="/payments/{esc(payment["id"])}/cancel"><button type="submit" class="danger-btn">거래 취소</button></form>
+            </div>
+            """
+        if payment["status"] == "RefundRequested" and user["role"] == "OperationsAdmin":
+            review += f"""
+            <div class="actions detail-actions">
+              <form method="post" action="/payments/{esc(payment["id"])}/refund"><button type="submit">환불 완료</button></form>
+              <form method="post" action="/payments/{esc(payment["id"])}/refund-reject"><button type="submit" class="secondary">환불 반려</button></form>
+            </div>
+            """
 
         timeline = "".join(
             f"""
             <tr>
-              <td>{esc(event["time"])}</td>
-              <td>{esc(event["actor"])}</td>
+              <td class="time-cell">{esc(format_datetime(event["time"]))}</td>
+              <td>{esc(actor_label(user, event["actor"]))}</td>
               <td>{esc(event["action"])}</td>
               <td><span class="badge {esc(event["result"].lower())}">{esc(event["result"])}</span></td>
               <td>{esc(event["detail"])}</td>
@@ -1160,16 +1493,16 @@ class FinPayHandler(BaseHTTPRequestHandler):
                   <p class="eyebrow">Payment Detail</p>
                   <h2>{esc(payment["id"])}</h2>
                 </div>
-                <span class="badge {esc(payment["status"].lower())}">{esc(payment["status"])}</span>
+                <span class="badge {esc(payment["status"].lower())}">{esc(status_label(payment["status"]))}</span>
               </div>
               <dl>
                 <dt>가맹점</dt><dd>{esc(payment["merchant"])}</dd>
                 <dt>금액</dt><dd>{esc(format_money(payment["amount"]))}</dd>
-                <dt>생성자</dt><dd>{esc(payment["created_by"])}</dd>
-                <dt>생성 시간</dt><dd>{esc(payment["created_at"])}</dd>
+                <dt>생성자</dt><dd>{esc(actor_label(user, payment["created_by"]))}</dd>
+                <dt>생성 시간</dt><dd class="time-cell">{esc(format_datetime(payment["created_at"]))}</dd>
                 <dt>메모</dt><dd>{esc(payment.get("memo", ""))}</dd>
-                <dt>처리자</dt><dd>{esc(payment.get("reviewed_by", "-"))}</dd>
-                <dt>처리 시간</dt><dd>{esc(payment.get("reviewed_at", "-"))}</dd>
+                <dt>처리자</dt><dd>{esc(actor_label(user, payment.get("reviewed_by", "-")))}</dd>
+                <dt>처리 시간</dt><dd class="time-cell">{esc(format_datetime(payment.get("reviewed_at", "-")))}</dd>
               </dl>
               {review}
               <a class="button secondary" href="/payments">목록으로</a>
@@ -1205,8 +1538,8 @@ class FinPayHandler(BaseHTTPRequestHandler):
         rows = "".join(
             f"""
             <tr>
-              <td>{esc(e["time"])}</td>
-              <td>{esc(e["actor"])}</td>
+              <td class="time-cell">{esc(format_datetime(e["time"]))}</td>
+              <td>{esc(actor_label(user, e["actor"]))}</td>
               <td>{esc(e["role"])}</td>
               <td>{esc(e["action"])}</td>
               <td><span class="badge {esc(e["result"].lower())}">{esc(e["result"])}</span></td>
@@ -1248,28 +1581,177 @@ class FinPayHandler(BaseHTTPRequestHandler):
             """,
         )
 
+    def merchant_settlements_page(self, user: dict) -> str:
+        data = load_data()
+        payments = visible_payments(data, user)
+        assigned = sorted(assigned_merchants(user, data)) if user["role"] == "Merchant" else REGISTERED_MERCHANTS
+        rows = ""
+        for merchant_name in assigned:
+            merchant_payments = [p for p in payments if p["merchant"] == merchant_name]
+            counts = count_by_status(merchant_payments)
+            rows += f"""
+            <tr>
+              <td>{esc(merchant_name)}</td>
+              <td>{len(merchant_payments)}</td>
+              <td>{counts["Approved"]}</td>
+              <td>{counts["Settled"]}</td>
+              <td>{counts["RefundRequested"]}</td>
+              <td>{esc(format_money(approved_amount(merchant_payments)))}</td>
+              <td>{esc(format_money(settlement_amount(merchant_payments)))}</td>
+            </tr>
+            """
+        refund_rows = "".join(
+            self.payment_row(p, user)
+            for p in payments
+            if p["status"] in {"RefundRequested", "Refunded"}
+        ) or '<tr><td colspan="7">환불 요청 또는 환불 완료 결제가 없습니다.</td></tr>'
+        return self.page(
+            "정산 조회",
+            user,
+            f"""
+            <div class="grid metrics">
+              {self.metric("담당 가맹점", len(assigned))}
+              {self.metric("승인 결제 금액", format_money(approved_amount(payments)))}
+              {self.metric("정산 완료 금액", format_money(settlement_amount(payments)))}
+              {self.metric("환불 요청", count_by_status(payments)["RefundRequested"])}
+            </div>
+            <section class="panel">
+              <h2>가맹점별 정산 요약</h2>
+              <table>
+                <thead><tr><th>가맹점</th><th>전체 건수</th><th>승인</th><th>정산 완료</th><th>환불 요청</th><th>승인 금액</th><th>정산 금액</th></tr></thead>
+                <tbody>{rows}</tbody>
+              </table>
+            </section>
+            <section class="panel">
+              <h2>환불 요청 현황</h2>
+              <table>
+                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성 시간</th><th>생성자</th><th>상세</th></tr></thead>
+                <tbody>{refund_rows}</tbody>
+              </table>
+            </section>
+            """,
+        )
+
     def security_status_page(self, user: dict) -> str:
-        tested = "tested=1" in self.path
-        message = '<div class="alert success">권한 차단 이벤트가 감사 로그에 기록되었습니다.</div>' if tested else ""
         status = integration_status()
         cognito_state = "설정됨" if status["cognito"]["configured"] else "미설정"
         cloudwatch_state = "설정됨" if status["cloudwatch"]["configured"] else "미설정"
+        secret_state = "설정됨" if status["secrets_manager"]["configured"] else "미설정"
         return self.page(
             "보안 상태",
             user,
             f"""
             <div class="grid">
-              {self.status_card("인증 서비스", cognito_state, "사용자 로그인과 역할 적용 상태를 확인합니다.")}
-              {self.status_card("IAM 권한", "역할 기반", "역할별 화면 접근 권한이 분리되어 있습니다.")}
-              {self.status_card("운영 로그", cloudwatch_state, "서비스 이벤트 전송 대상 설정 상태를 확인합니다.")}
+              {self.status_card("로그인 연동", cognito_state, "사용자 그룹을 앱 역할로 매핑합니다.")}
+              {self.status_card("비밀값 보관", secret_state, "데이터베이스 비밀번호를 앱 코드와 분리합니다.")}
+              {self.status_card("운영 로그", cloudwatch_state, "로그인, 결제 처리, 접근 거부 이벤트를 전송합니다.")}
             </div>
+            <section class="panel">
+              <h2>접근 제어 기준</h2>
+              <table>
+                <thead><tr><th>역할</th><th>주요 허용 기능</th></tr></thead>
+                <tbody>
+                  <tr><td>Customer</td><td>등록 가맹점 선택 후 본인 결제 요청 생성 및 조회</td></tr>
+                  <tr><td>Merchant</td><td>담당 가맹점 거래/정산 조회 및 환불 요청</td></tr>
+                  <tr><td>SettlementOperator</td><td>승인 대기 결제 승인 또는 거절 전담</td></tr>
+                  <tr><td>Auditor</td><td>결제 내역 및 감사 이벤트 조회</td></tr>
+                  <tr><td>OperationsAdmin</td><td>가맹점 관리, 환불/취소/정산 처리, 운영 상태 확인</td></tr>
+                </tbody>
+              </table>
+            </section>
+            """,
+        )
+
+    def merchant_admin_page(self, user: dict) -> str:
+        data = load_data()
+        assignments_by_email = merchant_assignment_map(data)
+        assignments = {merchant_name: [] for merchant_name in REGISTERED_MERCHANTS}
+        for email, merchant_names in assignments_by_email.items():
+            for merchant_name in merchant_names:
+                if merchant_name in assignments:
+                    assignments[merchant_name].append(email)
+        merchant_account_count = len(assignments_by_email)
+        merchant_options = "".join(
+            f'<option value="{esc(merchant_name)}">{esc(merchant_name)}</option>'
+            for merchant_name in REGISTERED_MERCHANTS
+        )
+        rows = ""
+        for merchant_name in REGISTERED_MERCHANTS:
+            payments = [p for p in data["payments"] if p["merchant"] == merchant_name]
+            counts = count_by_status(payments)
+            assigned_emails = sorted(assignments.get(merchant_name, []))
+            assigned = ", ".join(assigned_emails) or "미배정"
+            unassign_actions = "".join(
+                f"""
+                <form method="post" action="/operations/merchants/unassign" class="inline-form">
+                  <input type="hidden" name="email" value="{esc(email)}">
+                  <input type="hidden" name="merchant" value="{esc(merchant_name)}">
+                  <button type="submit" class="small secondary">해제</button>
+                </form>
+                """
+                for email in assigned_emails
+            ) or "-"
+            rows += f"""
+            <tr>
+              <td>{esc(merchant_name)}</td>
+              <td>{esc(assigned)}</td>
+              <td>{len(payments)}</td>
+              <td>{counts["Pending"]}</td>
+              <td>{counts["Approved"]}</td>
+              <td>{counts["Settled"]}</td>
+              <td>{counts["Rejected"]}</td>
+              <td>{esc(format_money(approved_amount(payments)))}</td>
+              <td>{esc(format_money(settlement_amount(payments)))}</td>
+              <td>{unassign_actions}</td>
+            </tr>
+            """
+        notice = self.flash_message()
+        return self.page(
+            "가맹점 관리",
+            user,
+            f"""
+            <section class="grid">
+              {self.metric("등록 가맹점", len(REGISTERED_MERCHANTS))}
+              {self.metric("Merchant 계정", merchant_account_count)}
+              {self.metric("승인 결제 금액", format_money(approved_amount(data["payments"])))}
+              {self.metric("정산 완료 금액", format_money(settlement_amount(data["payments"])))}
+            </section>
+            <section class="panel hero-panel">
+              <div>
+                <h2>가맹점 접근 범위</h2>
+                <p>OperationsAdmin은 Merchant 계정에 담당 가맹점을 배정하고, Merchant는 배정된 가맹점 거래와 정산 내역만 조회합니다.</p>
+              </div>
+            </section>
+            {notice}
             <section class="panel narrow">
-              <h2>권한 차단 이벤트 생성</h2>
-              {message}
-              <p>보안 운영자가 접근 차단 이벤트를 수동으로 기록할 수 있습니다.</p>
-              <form method="post" action="/security/test-denied-access">
-                <button type="submit">차단 이벤트 기록</button>
+              <h2>Merchant 가맹점 배정</h2>
+              <form method="post" action="/operations/merchants/assign" class="stack">
+                <label>Merchant 이메일</label>
+                <input name="email" type="email" value="{esc(DEFAULT_MERCHANT_EMAIL)}" required>
+                <label>가맹점</label>
+                <select name="merchant" required>{merchant_options}</select>
+                <button type="submit">가맹점 배정</button>
               </form>
+            </section>
+            <section class="panel">
+              <h2>등록 가맹점 및 담당자</h2>
+              <table>
+                <thead><tr><th>가맹점</th><th>담당 Merchant</th><th>전체 건수</th><th>Pending</th><th>Approved</th><th>Settled</th><th>Rejected</th><th>승인 금액</th><th>정산 금액</th><th>배정 해제</th></tr></thead>
+                <tbody>{rows}</tbody>
+              </table>
+            </section>
+            <section class="panel">
+              <h2>운영 기준</h2>
+              <table>
+                <thead><tr><th>대상</th><th>정책</th></tr></thead>
+                <tbody>
+                  <tr><td>가맹점 등록</td><td>OperationsAdmin이 등록한 가맹점만 결제 생성 화면에 표시됩니다.</td></tr>
+                  <tr><td>Merchant 배정</td><td>Merchant 계정은 배정된 가맹점의 결제만 조회할 수 있습니다.</td></tr>
+                  <tr><td>거래 승인</td><td>SettlementOperator만 승인 대기 결제를 승인 또는 거절합니다.</td></tr>
+                  <tr><td>사후 처리</td><td>OperationsAdmin은 승인 이후 결제를 정산 완료, 취소, 환불 상태로 변경합니다.</td></tr>
+                  <tr><td>감사</td><td>Auditor와 OperationsAdmin만 전체 감사 이벤트를 확인합니다.</td></tr>
+                </tbody>
+              </table>
             </section>
             """,
         )
@@ -1285,8 +1767,8 @@ class FinPayHandler(BaseHTTPRequestHandler):
             <div class="grid">
               {self.status_card("서비스 런타임", "정상", "애플리케이션 프로세스가 실행 중입니다.")}
               {self.status_card("데이터 저장", status["storage"]["mode"], status["storage"]["warning"] or "정상")}
-              {self.status_card("저장소", rds["status"], f'{esc(rds.get("host", "Local JSON"))}')}
-              {self.status_card("보안 저장소", secret_state, status["secrets_manager"]["secret_arn"] or "연동 정보 미설정")}
+              {self.status_card("데이터베이스", rds["status"], "VPC 내부 앱 서버에서 연결 상태를 확인합니다.")}
+              {self.status_card("보안 저장소", secret_state, "민감정보는 관리형 비밀 저장소에서 조회합니다.")}
               {self.status_card("점검 API", "정상", "상태 점검 경로가 제공됩니다.")}
             </div>
             <section class="panel">
@@ -1300,17 +1782,17 @@ GET /api/audit-events</pre>
             </section>
             <section class="panel">
               <h2>서비스 연동 설정</h2>
-              <dl>
-                <dt>Environment</dt><dd>{esc(status["environment"])}</dd>
-                <dt>AWS Region</dt><dd>{esc(status["aws_region"])}</dd>
-                <dt>Storage Mode</dt><dd>{esc(status["storage"]["mode"])}</dd>
-                <dt>인증 서비스 ID</dt><dd>{esc(status["cognito"]["user_pool_id"] or "-")}</dd>
-                <dt>웹 클라이언트 ID</dt><dd>{esc(status["cognito"]["web_client_id"] or "-")}</dd>
-                <dt>데이터베이스 주소</dt><dd>{esc(rds.get("host", "-"))}</dd>
-                <dt>데이터베이스 포트</dt><dd>{esc(rds.get("port", "-"))}</dd>
-                <dt>응답 지연</dt><dd>{esc(str(rds.get("latency_ms", "-")) + (" ms" if "latency_ms" in rds else ""))}</dd>
-                <dt>운영 로그 그룹</dt><dd>{esc(status["cloudwatch"]["log_group"] or "-")}</dd>
-              </dl>
+              <div class="kv-grid">
+                {self.kv_item("환경", status["environment"])}
+                {self.kv_item("리전", status["aws_region"])}
+                {self.kv_item("저장 방식", status["storage"]["mode"])}
+                {self.kv_item("인증 서비스 ID", status["cognito"]["user_pool_id"] or "-")}
+                {self.kv_item("웹 클라이언트 ID", status["cognito"]["web_client_id"] or "-")}
+                {self.kv_item("데이터베이스 주소", rds.get("host", "-"))}
+                {self.kv_item("데이터베이스 포트", rds.get("port", "-"))}
+                {self.kv_item("응답 지연", str(rds.get("latency_ms", "-")) + (" ms" if "latency_ms" in rds else ""))}
+                {self.kv_item("운영 로그 그룹", status["cloudwatch"]["log_group"] or "-")}
+              </div>
             </section>
             """,
         )
@@ -1367,14 +1849,15 @@ GET /api/audit-events</pre>
 </body>
 </html>"""
 
-    def payment_row(self, p: dict) -> str:
+    def payment_row(self, p: dict, user: dict) -> str:
         return f"""
         <tr>
           <td>{esc(p["id"])}</td>
-          <td><span class="badge {esc(p["status"].lower())}">{esc(p["status"])}</span></td>
+          <td><span class="badge {esc(p["status"].lower())}">{esc(status_label(p["status"]))}</span></td>
           <td>{esc(p["merchant"])}</td>
           <td>{esc(format_money(p["amount"]))}</td>
-          <td>{esc(p["created_by"])}</td>
+          <td class="time-cell">{esc(format_datetime(p["created_at"]))}</td>
+          <td>{esc(actor_label(user, p["created_by"]))}</td>
           <td><a href="/detail?id={esc(p["id"])}">보기</a></td>
         </tr>
         """
@@ -1399,6 +1882,9 @@ GET /api/audit-events</pre>
     def status_card(self, title: str, state: str, detail: str) -> str:
         return f'<article class="panel"><h2>{esc(title)}</h2><p class="state">{esc(state)}</p><p>{esc(detail)}</p></article>'
 
+    def kv_item(self, label: str, value: object) -> str:
+        return f'<div class="kv-item"><span>{esc(label)}</span><strong>{esc(value)}</strong></div>'
+
     def distribution(self, counts: dict[str, int]) -> str:
         total = sum(counts.values())
         if total == 0:
@@ -1408,7 +1894,7 @@ GET /api/audit-events</pre>
             percent = round((count / total) * 100)
             rows += f"""
             <div class="bar-row">
-              <span>{esc(label)}</span>
+              <span>{esc(status_label(label))}</span>
               <div class="bar"><i style="width: {percent}%"></i></div>
               <strong>{count}</strong>
             </div>
@@ -1421,6 +1907,14 @@ GET /api/audit-events</pre>
             "created": ("success", "결제 요청이 생성되었습니다."),
             "approved": ("success", "결제 요청이 승인되었습니다."),
             "rejected": ("danger", "결제 요청이 거절되었습니다."),
+            "refund_requested": ("success", "환불 요청이 접수되었습니다."),
+            "refunded": ("success", "환불 처리가 완료되었습니다."),
+            "refund_rejected": ("success", "환불 요청이 반려되었습니다."),
+            "cancelled": ("danger", "거래가 취소되었습니다."),
+            "settled": ("success", "정산 완료 처리되었습니다."),
+            "updated": ("success", "거래 상태가 변경되었습니다."),
+            "merchant_assigned": ("success", "Merchant 가맹점 배정이 저장되었습니다."),
+            "merchant_unassigned": ("success", "Merchant 가맹점 배정이 해제되었습니다."),
         }
         if code not in messages:
             return ""
@@ -1435,6 +1929,7 @@ GET /api/audit-events</pre>
         user = SESSIONS.get(morsel.value)
         if not user:
             return None
+        user["role"] = normalize_role(user.get("role", ""))
         return user
 
     def require_login(self) -> dict | None:
@@ -1550,6 +2045,7 @@ p { line-height: 1.65; }
 .stack { display: grid; gap: 12px; }
 .filters { display: grid; grid-template-columns: max-content minmax(130px, 180px) max-content minmax(220px, 1fr) max-content max-content; gap: 10px; align-items: end; margin-bottom: 16px; }
 .toolbar { display: flex; justify-content: flex-end; margin: -4px 0 14px; }
+.inline-form { display: inline-block; margin: 0 4px 4px 0; }
 label { font-weight: 700; font-size: 14px; }
 input, select, textarea { width: 100%; border: 1px solid var(--line-strong); border-radius: 6px; padding: 11px 12px; font: inherit; background: white; color: var(--text); }
 input:focus, select:focus, textarea:focus { outline: 3px solid #cde9e5; border-color: var(--primary); }
@@ -1567,7 +2063,7 @@ button:hover, .button:hover { background: var(--primary-dark); }
 .metrics .panel { border-top: 3px solid var(--primary); }
 .state { color: var(--primary); font-weight: 800; }
 .bars { display: grid; gap: 12px; }
-.bar-row { display: grid; grid-template-columns: 110px 1fr 48px; gap: 12px; align-items: center; }
+.bar-row { display: grid; grid-template-columns: 140px 1fr 48px; gap: 14px; align-items: center; }
 .bar-row span { color: var(--muted); font-weight: 800; }
 .bar-row strong { text-align: right; }
 .bar { height: 10px; overflow: hidden; background: #edf2f7; border-radius: 999px; }
@@ -1583,15 +2079,23 @@ th, td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: l
 th { color: var(--muted); font-size: 12px; text-transform: uppercase; background: var(--surface-soft); }
 tbody tr:hover { background: #f7fbfb; }
 .actions { display: flex; gap: 8px; }
-.badge { display: inline-block; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; background: #eef2f6; }
+.badge { display: inline-block; min-width: 78px; text-align: center; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; background: #eef2f6; }
 .badge.approved, .badge.success { color: var(--success); background: #ecfdf3; }
+.badge.settled { color: var(--success); background: #dcfae6; }
 .badge.pending { color: var(--warning); background: #fffaeb; }
-.badge.rejected, .badge.denied { color: var(--danger); background: #fef3f2; }
+.badge.refundrequested { color: var(--warning); background: #fff4cc; }
+.badge.refunded { color: #155eef; background: #eef4ff; }
+.badge.cancelled, .badge.rejected, .badge.denied { color: var(--danger); background: #fef3f2; }
 .alert { border-radius: 6px; padding: 12px; margin-bottom: 14px; border: 1px solid transparent; }
 .alert.danger { background: #fef3f2; color: var(--danger); border-color: #fecdca; }
 .alert.success { background: #ecfdf3; color: var(--success); border-color: #abefc6; }
 .steps { margin: 0; padding-left: 22px; line-height: 1.9; }
 pre { white-space: pre-wrap; background: #111827; color: #e6edf3; padding: 14px; border-radius: 6px; overflow-x: auto; }
+.time-cell { font-variant-numeric: tabular-nums; white-space: nowrap; color: #344054; }
+.kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.kv-item { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); min-width: 0; }
+.kv-item span { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.kv-item strong { color: var(--text); font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
 @media (max-width: 820px) {
   header { height: auto; align-items: flex-start; flex-direction: column; padding: 16px; }
   nav { width: 100%; }
