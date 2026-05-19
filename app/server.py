@@ -46,14 +46,6 @@ CLOUDWATCH_SEQUENCE_TOKEN = None
 CLOUDWATCH_READY = False
 CLOUDWATCH_WARNING = ""
 
-USERS = {
-    "customer@finpay.local": {"name": "고객 사용자", "role": "Customer"},
-    "merchant@finpay.local": {"name": "가맹점 사용자", "role": "Merchant"},
-    "settlement@finpay.local": {"name": "정산 담당자", "role": "SettlementOperator"},
-    "auditor@finpay.local": {"name": "감사 담당자", "role": "Auditor"},
-    "ops@finpay.local": {"name": "운영 관리자", "role": "OperationsAdmin"},
-}
-
 NAV_ITEMS = [
     ("대시보드", "/dashboard", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
     ("내 권한", "/my-access", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
@@ -659,17 +651,27 @@ def allowed_nav_items(user: dict) -> list[tuple[str, str]]:
 
 
 class FinPayHandler(BaseHTTPRequestHandler):
-    server_version = "FinPayPython/0.1"
+    server_version = "FinPay"
+
+    def version_string(self) -> str:
+        return self.server_version
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
 
         if path in ("/health", "/api/health"):
-            self.send_json({"status": "healthy", "runtime": "python", "version": "0.1.0"})
+            self.send_json({"status": "healthy", "service": "finpay", "environment": APP_CONFIG["environment"]})
             return
 
         if path == "/api/db-check":
+            user = self.require_login()
+            if not user:
+                return
+            if user["role"] not in {"OperationsAdmin"}:
+                add_event(user["email"], user["role"], "GET_DB_CHECK_API", "Denied", "데이터베이스 상태 API 접근 권한 없음")
+                self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
+                return
             data = load_data()
             probe = db_probe()
             self.send_json(
@@ -739,7 +741,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
 
         if path == "/auth/cognito/start":
             if not APP_CONFIG["cognito_hosted_ui_url"]:
-                self.send_html(self.login_page("Cognito Hosted UI is not configured."), HTTPStatus.BAD_REQUEST)
+                self.send_html(self.login_page("로그인 서비스가 아직 준비되지 않았습니다."), HTTPStatus.BAD_REQUEST)
                 return
             self.redirect(cognito_login_url(self.headers))
             return
@@ -747,18 +749,18 @@ class FinPayHandler(BaseHTTPRequestHandler):
         if path == "/auth/callback":
             code = parse_qs(parsed.query).get("code", [""])[0]
             if not code:
-                self.send_html(self.login_page("Cognito authorization code is missing."), HTTPStatus.BAD_REQUEST)
+                self.send_html(self.login_page("로그인 요청 정보를 확인할 수 없습니다."), HTTPStatus.BAD_REQUEST)
                 return
             try:
                 tokens = exchange_cognito_code(code, self.headers)
                 user = cognito_user_from_tokens(tokens)
             except Exception as exc:
-                self.send_html(self.login_page(f"Cognito login failed: {exc}"), HTTPStatus.BAD_REQUEST)
+                self.send_html(self.login_page("로그인 처리 중 문제가 발생했습니다. 관리자에게 문의해 주세요."), HTTPStatus.BAD_REQUEST)
                 return
             sid = uuid.uuid4().hex
             SESSIONS[sid] = user
             role = user["role"]
-            add_event(user["email"], user["role"], "COGNITO_LOGIN", "Success", "Cognito Hosted UI login")
+            add_event(user["email"], user["role"], "LOGIN", "Success", "서비스 로그인")
             self.send_response(HTTPStatus.SEE_OTHER)
             self.send_header("Location", "/dashboard")
             self.send_header("Set-Cookie", f"finpay_session={sid}; HttpOnly; SameSite=Lax; Path=/")
@@ -817,22 +819,6 @@ class FinPayHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         form = self.read_form()
-
-        if path == "/auth/login":
-            email = form.get("email", [""])[0]
-            if email not in USERS:
-                self.send_html(self.login_page("등록되지 않은 계정입니다."), HTTPStatus.BAD_REQUEST)
-                return
-            sid = uuid.uuid4().hex
-            user = {"email": email, **USERS[email], "auth_provider": "demo"}
-            SESSIONS[sid] = user
-            role = user["role"]
-            add_event(email, role, "LOGIN", "Success", "데모 계정 로그인")
-            self.send_response(HTTPStatus.SEE_OTHER)
-            self.send_header("Location", "/dashboard")
-            self.send_header("Set-Cookie", f"finpay_session={sid}; HttpOnly; SameSite=Lax; Path=/")
-            self.end_headers()
-            return
 
         if path == "/auth/logout":
             user = self.current_user()
@@ -928,11 +914,11 @@ class FinPayHandler(BaseHTTPRequestHandler):
 
     def login_page(self, error: str = "") -> str:
         message = f'<div class="alert danger">{esc(error)}</div>' if error else ""
-        login_action = '<div class="alert danger">Cognito Hosted UI가 아직 설정되지 않았습니다.</div>'
+        login_action = '<div class="alert danger">로그인 서비스가 아직 준비되지 않았습니다.</div>'
         if APP_CONFIG["cognito_hosted_ui_url"]:
             login_action = """
-                <a class="button login-primary" href="/auth/cognito/start">Cognito로 로그인</a>
-                <p class="muted">관리자가 생성한 Cognito 계정으로 로그인합니다. 역할은 Cognito 그룹 기준으로 자동 적용됩니다.</p>
+                <a class="button login-primary" href="/auth/cognito/start">로그인</a>
+                <p class="muted">발급받은 계정으로 접속하면 업무 권한에 맞는 메뉴가 자동으로 표시됩니다.</p>
             """
         return self.page(
             "로그인",
@@ -942,7 +928,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
               <div class="login-copy">
                 <p class="eyebrow">FinPay Console</p>
                 <h1>결제 운영과 보안 감사를 하나의 콘솔에서 관리합니다</h1>
-                <p>CloudFront, Cognito, ALB, Auto Scaling, RDS, Secrets Manager, CloudWatch를 연결한 실제 핀테크 운영 검증 앱입니다.</p>
+                <p>결제 요청, 승인 처리, 감사 추적을 역할별 권한에 따라 안전하게 운영합니다.</p>
                 <div class="login-highlights">
                   <span>역할 기반 접근제어</span>
                   <span>결제 승인 흐름</span>
@@ -951,12 +937,12 @@ class FinPayHandler(BaseHTTPRequestHandler):
               </div>
               <section class="panel login-panel">
                 <p class="eyebrow">Secure Sign In</p>
-                <h2>실제 Cognito 로그인</h2>
+                <h2>FinPay 로그인</h2>
                 {message}
                 {login_action}
                 <div class="login-note">
-                  <strong>회원가입은 비활성화되어 있습니다.</strong>
-                  <span>테스트 계정은 관리자 CLI에서 생성하고, 역할은 Cognito 그룹으로 배정합니다.</span>
+                  <strong>승인된 사용자만 접속할 수 있습니다.</strong>
+                  <span>계정 발급과 권한 변경은 운영 관리자에게 요청해 주세요.</span>
                 </div>
               </section>
             </section>
@@ -1273,9 +1259,9 @@ class FinPayHandler(BaseHTTPRequestHandler):
             user,
             f"""
             <div class="grid">
-              {self.status_card("Cognito", cognito_state, "User Pool과 Web Client 설정 상태를 확인합니다.")}
+              {self.status_card("인증 서비스", cognito_state, "사용자 로그인과 역할 적용 상태를 확인합니다.")}
               {self.status_card("IAM 권한", "역할 기반", "역할별 화면 접근 권한이 분리되어 있습니다.")}
-              {self.status_card("CloudWatch", cloudwatch_state, "구조화 로그 전송 대상 설정 상태를 확인합니다.")}
+              {self.status_card("운영 로그", cloudwatch_state, "서비스 이벤트 전송 대상 설정 상태를 확인합니다.")}
             </div>
             <section class="panel narrow">
               <h2>권한 차단 이벤트 생성</h2>
@@ -1297,33 +1283,33 @@ class FinPayHandler(BaseHTTPRequestHandler):
             user,
             f"""
             <div class="grid">
-              {self.status_card("앱 런타임", "Python", "표준 라이브러리 기반 로컬 앱")}
-              {self.status_card("저장 모드", status["storage"]["mode"], status["storage"]["warning"] or "정상")}
+              {self.status_card("서비스 런타임", "정상", "애플리케이션 프로세스가 실행 중입니다.")}
+              {self.status_card("데이터 저장", status["storage"]["mode"], status["storage"]["warning"] or "정상")}
               {self.status_card("저장소", rds["status"], f'{esc(rds.get("host", "Local JSON"))}')}
-              {self.status_card("Secrets Manager", secret_state, status["secrets_manager"]["secret_arn"] or "RDS Secret ARN 미설정")}
-              {self.status_card("API", "정상", "/api/health, /api/db-check 제공")}
+              {self.status_card("보안 저장소", secret_state, status["secrets_manager"]["secret_arn"] or "연동 정보 미설정")}
+              {self.status_card("점검 API", "정상", "상태 점검 경로가 제공됩니다.")}
             </div>
             <section class="panel">
-              <h2>API 확인</h2>
-              <pre>GET http://127.0.0.1:{APP_PORT}/api/health
-GET http://127.0.0.1:{APP_PORT}/api/db-check
-GET http://127.0.0.1:{APP_PORT}/api/config
-GET http://127.0.0.1:{APP_PORT}/api/me
-GET http://127.0.0.1:{APP_PORT}/api/payments
-GET http://127.0.0.1:{APP_PORT}/api/audit-events</pre>
+              <h2>상태 점검 경로</h2>
+              <pre>GET /api/health
+GET /api/db-check
+GET /api/config
+GET /api/me
+GET /api/payments
+GET /api/audit-events</pre>
             </section>
             <section class="panel">
-              <h2>AWS 연동 설정</h2>
+              <h2>서비스 연동 설정</h2>
               <dl>
                 <dt>Environment</dt><dd>{esc(status["environment"])}</dd>
                 <dt>AWS Region</dt><dd>{esc(status["aws_region"])}</dd>
                 <dt>Storage Mode</dt><dd>{esc(status["storage"]["mode"])}</dd>
-                <dt>Cognito User Pool</dt><dd>{esc(status["cognito"]["user_pool_id"] or "-")}</dd>
-                <dt>Cognito Web Client</dt><dd>{esc(status["cognito"]["web_client_id"] or "-")}</dd>
-                <dt>RDS Endpoint</dt><dd>{esc(rds.get("host", "-"))}</dd>
-                <dt>RDS Port</dt><dd>{esc(rds.get("port", "-"))}</dd>
-                <dt>RDS Latency</dt><dd>{esc(str(rds.get("latency_ms", "-")) + (" ms" if "latency_ms" in rds else ""))}</dd>
-                <dt>CloudWatch Log Group</dt><dd>{esc(status["cloudwatch"]["log_group"] or "-")}</dd>
+                <dt>인증 서비스 ID</dt><dd>{esc(status["cognito"]["user_pool_id"] or "-")}</dd>
+                <dt>웹 클라이언트 ID</dt><dd>{esc(status["cognito"]["web_client_id"] or "-")}</dd>
+                <dt>데이터베이스 주소</dt><dd>{esc(rds.get("host", "-"))}</dd>
+                <dt>데이터베이스 포트</dt><dd>{esc(rds.get("port", "-"))}</dd>
+                <dt>응답 지연</dt><dd>{esc(str(rds.get("latency_ms", "-")) + (" ms" if "latency_ms" in rds else ""))}</dd>
+                <dt>운영 로그 그룹</dt><dd>{esc(status["cloudwatch"]["log_group"] or "-")}</dd>
               </dl>
             </section>
             """,
@@ -1375,7 +1361,7 @@ GET http://127.0.0.1:{APP_PORT}/api/audit-events</pre>
     {userbar}
   </header>
   <main>
-    <div class="title"><p class="eyebrow">Python Prototype</p><h1>{esc(title)}</h1></div>
+    <div class="title"><p class="eyebrow">FinPay Operations</p><h1>{esc(title)}</h1></div>
     {body}
   </main>
 </body>
