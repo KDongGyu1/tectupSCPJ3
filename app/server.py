@@ -10,7 +10,7 @@ import socket
 import time
 import uuid
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,7 +49,7 @@ CLOUDWATCH_WARNING = ""
 NAV_ITEMS = [
     ("대시보드", "/dashboard", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
     ("내 권한", "/my-access", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
-    ("결제 생성", "/payments/new", {"Customer"}),
+    ("결제 생성", "/payments/new", {"Customer", "Merchant"}),
     ("결제 승인", "/payments/review", {"SettlementOperator", "OperationsAdmin"}),
     ("결제 내역", "/payments", {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
     ("감사 이벤트", "/audit/events", {"Auditor", "OperationsAdmin"}),
@@ -59,26 +59,13 @@ NAV_ITEMS = [
 
 ROLE_DESCRIPTIONS = {
     "Customer": "결제 요청을 생성하고 본인이 요청한 결제 내역을 조회합니다.",
-    "Merchant": "가맹점에 접수된 결제 내역과 거래 상태를 조회합니다.",
+    "Merchant": "가맹점 결제 요청을 생성하고 본인 관련 결제 내역을 조회합니다.",
     "SettlementOperator": "승인 대기 결제를 검토하고 승인 또는 거절합니다.",
     "Auditor": "결제 내역과 감사 이벤트를 조회합니다.",
     "OperationsAdmin": "결제 운영, 감사 조회, 시스템 상태를 관리합니다.",
 }
 
-ROLE_ALLOWED_APIS = {
-    "Customer": ["GET /api/me", "GET /api/payments", "POST /payments"],
-    "Merchant": ["GET /api/me", "GET /api/payments"],
-    "SettlementOperator": ["GET /api/me", "GET /api/payments", "POST /payments/{id}/approve", "POST /payments/{id}/reject"],
-    "Auditor": ["GET /api/me", "GET /api/payments", "GET /api/audit-events"],
-    "OperationsAdmin": ["GET /api/me", "GET /api/payments", "GET /api/audit-events", "GET /api/config", "GET /api/db-check"],
-}
-
-MERCHANT_ACCOUNTS = {
-    "merchant@finpay.local": {"FinPay Store", "FinPay Store3"},
-}
-
 SESSIONS: dict[str, dict] = {}
-KST = timezone(timedelta(hours=9), "KST")
 
 
 def now_iso() -> str:
@@ -454,42 +441,9 @@ def format_money(amount: int) -> str:
     return f"{amount:,} KRW"
 
 
-def format_datetime(value: object) -> str:
-    text = str(value or "").strip()
-    if not text or text == "-":
-        return "-"
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S KST")
-    except ValueError:
-        return text
-
-
-def approved_amount(payments: list[dict]) -> int:
-    return sum(p["amount"] for p in payments if p["status"] == "Approved")
-
-
-def actor_label(viewer: dict, email: str) -> str:
-    if not email or email == "-":
-        return "-"
-    if email == viewer["email"]:
-        return "본인"
-    if viewer["role"] in {"Customer", "Merchant"}:
-        return "FinPay 운영팀" if email == "ops@finpay.local" else mask_value(email)
-    return email
-
-
 def visible_payments(data: dict, user: dict) -> list[dict]:
-    if user["role"] == "Customer":
+    if user["role"] in {"Customer", "Merchant"}:
         return [p for p in data["payments"] if p["created_by"] == user["email"]]
-    if user["role"] == "Merchant":
-        merchant_names = MERCHANT_ACCOUNTS.get(user["email"], set())
-        return [
-            p for p in data["payments"]
-            if p["merchant"] in merchant_names or p["created_by"] == user["email"]
-        ]
     if user["role"] in {"SettlementOperator", "Auditor", "OperationsAdmin"}:
         return list(data["payments"])
     return []
@@ -615,7 +569,7 @@ def cognito_user_from_tokens(tokens: dict) -> dict:
         raise ValueError("Cognito group is not mapped to an application role.")
     return {
         "email": email,
-        "name": id_payload.get("name") or email.split("@")[0],
+        "name": id_payload.get("name") or email,
         "role": role,
         "auth_provider": "cognito",
     }
@@ -840,7 +794,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
         routes = {
             "/dashboard": (self.dashboard_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
             "/my-access": (self.my_access_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
-            "/payments/new": (self.new_payment_page, {"Customer"}),
+            "/payments/new": (self.new_payment_page, {"Customer", "Merchant"}),
             "/payments/review": (self.review_payments_page, {"SettlementOperator", "OperationsAdmin"}),
             "/payments": (self.payment_history_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
             "/detail": (self.payment_detail_from_query_page, {"Customer", "Merchant", "SettlementOperator", "Auditor", "OperationsAdmin"}),
@@ -896,12 +850,17 @@ class FinPayHandler(BaseHTTPRequestHandler):
             self.update_payment_status(user, reject_match.group(1), "Rejected")
             return
 
+        if path == "/security/test-denied-access":
+            add_event(user["email"], user["role"], "DENIED_ACCESS_SIMULATION", "Denied", "권한 차단 이벤트 생성")
+            self.redirect("/security/status?tested=1")
+            return
+
         self.send_error_page(HTTPStatus.NOT_FOUND, "요청 경로를 찾을 수 없습니다.")
 
     def create_payment(self, user: dict, form: dict[str, list[str]]) -> None:
-        if user["role"] != "Customer":
+        if user["role"] not in {"Customer", "Merchant"}:
             add_event(user["email"], user["role"], "CREATE_PAYMENT", "Denied", "결제 생성 권한 없음")
-            self.send_html(self.forbidden_page(user, {"Customer"}), HTTPStatus.FORBIDDEN)
+            self.send_html(self.forbidden_page(user, {"Customer", "Merchant"}), HTTPStatus.FORBIDDEN)
             return
 
         merchant = form.get("merchant", [""])[0].strip()
@@ -997,9 +956,9 @@ class FinPayHandler(BaseHTTPRequestHandler):
         pending = payment_counts["Pending"]
         approved = payment_counts["Approved"]
         denied = sum(1 for e in data["audit_events"] if e["result"] == "Denied")
-        total_amount = approved_amount(payments)
-        recent_rows = "".join(self.payment_row(p, user) for p in payments[:5]) or '<tr><td colspan="7">표시할 결제가 없습니다.</td></tr>'
-        primary_link = '<a class="button" href="/payments/new">결제 생성</a>' if user["role"] == "Customer" else '<a class="button" href="/payments">결제 내역</a>'
+        total_amount = sum(p["amount"] for p in payments)
+        recent_rows = "".join(self.payment_row(p) for p in payments[:5]) or '<tr><td colspan="6">표시할 결제가 없습니다.</td></tr>'
+        primary_link = '<a class="button" href="/payments/new">결제 생성</a>' if user["role"] in {"Customer", "Merchant"} else '<a class="button" href="/payments">결제 내역</a>'
         return self.page(
             "대시보드",
             user,
@@ -1008,17 +967,17 @@ class FinPayHandler(BaseHTTPRequestHandler):
               {self.metric("표시 결제", len(payments))}
               {self.metric("승인 대기", pending)}
               {self.metric("승인 완료", approved)}
-              {self.metric("승인 결제 금액", format_money(total_amount))}
+              {self.metric("총 결제 금액", format_money(total_amount))}
             </div>
             <section class="panel hero-panel">
               <div>
                 <h2>오늘의 운영 현황</h2>
-                <p>현재 역할에서 조회 가능한 거래와 승인 완료 금액을 기준으로 운영 상태를 확인합니다.</p>
+                <p>현재 역할에서 확인 가능한 결제 요청, 승인 상태, 감사 이벤트를 기준으로 서비스 상태를 확인합니다.</p>
               </div>
               {primary_link}
             </section>
             <section class="grid">
-              {self.status_card("결제 업무", "운영 중", "고객은 결제를 요청하고 정산 담당자는 승인 또는 거절합니다.")}
+              {self.status_card("결제 업무", "운영 중", "고객과 가맹점은 결제 요청을 생성하고 정산 담당자는 승인 또는 거절합니다.")}
               {self.status_card("접근 제어", "역할 기반", "사용자 역할에 따라 메뉴와 화면 접근 권한이 분리됩니다.")}
               {self.status_card("감사 추적", f"{denied}건 차단", "로그인, 결제 처리, 차단 이벤트가 감사 이벤트로 기록됩니다.")}
             </section>
@@ -1029,7 +988,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
             <section class="panel">
               <h2>최근 결제</h2>
               <table>
-                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성 시간</th><th>생성자</th><th>상세</th></tr></thead>
+                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성자</th><th>상세</th></tr></thead>
                 <tbody>{recent_rows}</tbody>
               </table>
             </section>
@@ -1041,11 +1000,6 @@ class FinPayHandler(BaseHTTPRequestHandler):
             f"<tr><td>{esc(label)}</td><td><code>{esc(path)}</code></td></tr>"
             for label, path in allowed_nav_items(user)
         )
-        allowed_api_rows = "".join(
-            f"<tr><td><code>{esc(api)}</code></td></tr>"
-            for api in ROLE_ALLOWED_APIS[user["role"]]
-        )
-        allowed_api_count = len(ROLE_ALLOWED_APIS[user["role"]])
         denied_rows = "".join(
             f"<tr><td>{esc(label)}</td><td><code>{esc(path)}</code></td></tr>"
             for label, path, roles in NAV_ITEMS
@@ -1056,22 +1010,15 @@ class FinPayHandler(BaseHTTPRequestHandler):
             user,
             f"""
             <section class="grid">
-              {self.status_card("사용자", user["email"], "로그인 계정")}
+              {self.status_card("사용자", user["name"], user["email"])}
               {self.status_card("역할", user["role"], ROLE_DESCRIPTIONS[user["role"]])}
-              {self.status_card("허용 API", f"{allowed_api_count}개", "아래 목록의 API만 현재 역할에서 사용할 수 있습니다.")}
+              {self.status_card("접근 정책", "역할 기반", "메뉴와 주요 API는 현재 역할에 따라 허용됩니다.")}
             </section>
             <section class="panel">
               <h2>허용된 메뉴</h2>
               <table>
                 <thead><tr><th>기능</th><th>경로</th></tr></thead>
                 <tbody>{allowed_rows}</tbody>
-              </table>
-            </section>
-            <section class="panel">
-              <h2>허용된 API</h2>
-              <table>
-                <thead><tr><th>API</th></tr></thead>
-                <tbody>{allowed_api_rows}</tbody>
               </table>
             </section>
             <section class="panel">
@@ -1139,7 +1086,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
             f'<option value="{esc(value)}" {"selected" if selected_status == value else ""}>{esc(value)}</option>'
             for value in ["All", "Pending", "Approved", "Rejected"]
         )
-        rows = "".join(self.payment_row(p, user) for p in payments) or '<tr><td colspan="7">표시할 결제가 없습니다.</td></tr>'
+        rows = "".join(self.payment_row(p) for p in payments) or '<tr><td colspan="6">표시할 결제가 없습니다.</td></tr>'
         notice = self.flash_message()
         return self.page(
             "결제 내역",
@@ -1160,7 +1107,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
                 <a class="button secondary" href="/payments">초기화</a>
               </form>
               <table>
-                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성 시간</th><th>생성자</th><th>상세</th></tr></thead>
+                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성자</th><th>상세</th></tr></thead>
                 <tbody>{rows}</tbody>
               </table>
             </section>
@@ -1191,8 +1138,8 @@ class FinPayHandler(BaseHTTPRequestHandler):
         timeline = "".join(
             f"""
             <tr>
-              <td class="time-cell">{esc(format_datetime(event["time"]))}</td>
-              <td>{esc(actor_label(user, event["actor"]))}</td>
+              <td>{esc(event["time"])}</td>
+              <td>{esc(event["actor"])}</td>
               <td>{esc(event["action"])}</td>
               <td><span class="badge {esc(event["result"].lower())}">{esc(event["result"])}</span></td>
               <td>{esc(event["detail"])}</td>
@@ -1218,11 +1165,11 @@ class FinPayHandler(BaseHTTPRequestHandler):
               <dl>
                 <dt>가맹점</dt><dd>{esc(payment["merchant"])}</dd>
                 <dt>금액</dt><dd>{esc(format_money(payment["amount"]))}</dd>
-                <dt>생성자</dt><dd>{esc(actor_label(user, payment["created_by"]))}</dd>
-                <dt>생성 시간</dt><dd class="time-cell">{esc(format_datetime(payment["created_at"]))}</dd>
+                <dt>생성자</dt><dd>{esc(payment["created_by"])}</dd>
+                <dt>생성 시간</dt><dd>{esc(payment["created_at"])}</dd>
                 <dt>메모</dt><dd>{esc(payment.get("memo", ""))}</dd>
-                <dt>처리자</dt><dd>{esc(actor_label(user, payment.get("reviewed_by", "-")))}</dd>
-                <dt>처리 시간</dt><dd class="time-cell">{esc(format_datetime(payment.get("reviewed_at", "-")))}</dd>
+                <dt>처리자</dt><dd>{esc(payment.get("reviewed_by", "-"))}</dd>
+                <dt>처리 시간</dt><dd>{esc(payment.get("reviewed_at", "-"))}</dd>
               </dl>
               {review}
               <a class="button secondary" href="/payments">목록으로</a>
@@ -1258,8 +1205,8 @@ class FinPayHandler(BaseHTTPRequestHandler):
         rows = "".join(
             f"""
             <tr>
-              <td class="time-cell">{esc(format_datetime(e["time"]))}</td>
-              <td>{esc(actor_label(user, e["actor"]))}</td>
+              <td>{esc(e["time"])}</td>
+              <td>{esc(e["actor"])}</td>
               <td>{esc(e["role"])}</td>
               <td>{esc(e["action"])}</td>
               <td><span class="badge {esc(e["result"].lower())}">{esc(e["result"])}</span></td>
@@ -1302,31 +1249,27 @@ class FinPayHandler(BaseHTTPRequestHandler):
         )
 
     def security_status_page(self, user: dict) -> str:
+        tested = "tested=1" in self.path
+        message = '<div class="alert success">권한 차단 이벤트가 감사 로그에 기록되었습니다.</div>' if tested else ""
         status = integration_status()
         cognito_state = "설정됨" if status["cognito"]["configured"] else "미설정"
         cloudwatch_state = "설정됨" if status["cloudwatch"]["configured"] else "미설정"
-        secret_state = "설정됨" if status["secrets_manager"]["configured"] else "미설정"
         return self.page(
             "보안 상태",
             user,
             f"""
             <div class="grid">
-              {self.status_card("로그인 연동", cognito_state, "사용자 그룹을 앱 역할로 매핑합니다.")}
-              {self.status_card("비밀값 보관", secret_state, "데이터베이스 비밀번호를 앱 코드와 분리합니다.")}
-              {self.status_card("운영 로그", cloudwatch_state, "로그인, 결제 처리, 접근 거부 이벤트를 전송합니다.")}
+              {self.status_card("인증 서비스", cognito_state, "사용자 로그인과 역할 적용 상태를 확인합니다.")}
+              {self.status_card("IAM 권한", "역할 기반", "역할별 화면 접근 권한이 분리되어 있습니다.")}
+              {self.status_card("운영 로그", cloudwatch_state, "서비스 이벤트 전송 대상 설정 상태를 확인합니다.")}
             </div>
-            <section class="panel">
-              <h2>접근 제어 기준</h2>
-              <table>
-                <thead><tr><th>역할</th><th>주요 허용 기능</th></tr></thead>
-                <tbody>
-                  <tr><td>Customer</td><td>본인 결제 요청 생성 및 조회</td></tr>
-                  <tr><td>Merchant</td><td>담당 가맹점 거래 상태 조회</td></tr>
-                  <tr><td>SettlementOperator</td><td>승인 대기 결제 승인 또는 거절</td></tr>
-                  <tr><td>Auditor</td><td>결제 내역 및 감사 이벤트 조회</td></tr>
-                  <tr><td>OperationsAdmin</td><td>운영 상태, 보안 상태, 연동 설정 확인</td></tr>
-                </tbody>
-              </table>
+            <section class="panel narrow">
+              <h2>권한 차단 이벤트 생성</h2>
+              {message}
+              <p>보안 운영자가 접근 차단 이벤트를 수동으로 기록할 수 있습니다.</p>
+              <form method="post" action="/security/test-denied-access">
+                <button type="submit">차단 이벤트 기록</button>
+              </form>
             </section>
             """,
         )
@@ -1342,8 +1285,8 @@ class FinPayHandler(BaseHTTPRequestHandler):
             <div class="grid">
               {self.status_card("서비스 런타임", "정상", "애플리케이션 프로세스가 실행 중입니다.")}
               {self.status_card("데이터 저장", status["storage"]["mode"], status["storage"]["warning"] or "정상")}
-              {self.status_card("데이터베이스", rds["status"], "VPC 내부 앱 서버에서 연결 상태를 확인합니다.")}
-              {self.status_card("보안 저장소", secret_state, "민감정보는 관리형 비밀 저장소에서 조회합니다.")}
+              {self.status_card("저장소", rds["status"], f'{esc(rds.get("host", "Local JSON"))}')}
+              {self.status_card("보안 저장소", secret_state, status["secrets_manager"]["secret_arn"] or "연동 정보 미설정")}
               {self.status_card("점검 API", "정상", "상태 점검 경로가 제공됩니다.")}
             </div>
             <section class="panel">
@@ -1357,17 +1300,17 @@ GET /api/audit-events</pre>
             </section>
             <section class="panel">
               <h2>서비스 연동 설정</h2>
-              <div class="kv-grid">
-                {self.kv_item("환경", status["environment"])}
-                {self.kv_item("리전", status["aws_region"])}
-                {self.kv_item("저장 방식", status["storage"]["mode"])}
-                {self.kv_item("인증 서비스 ID", status["cognito"]["user_pool_id"] or "-")}
-                {self.kv_item("웹 클라이언트 ID", status["cognito"]["web_client_id"] or "-")}
-                {self.kv_item("데이터베이스 주소", rds.get("host", "-"))}
-                {self.kv_item("데이터베이스 포트", rds.get("port", "-"))}
-                {self.kv_item("응답 지연", str(rds.get("latency_ms", "-")) + (" ms" if "latency_ms" in rds else ""))}
-                {self.kv_item("운영 로그 그룹", status["cloudwatch"]["log_group"] or "-")}
-              </div>
+              <dl>
+                <dt>Environment</dt><dd>{esc(status["environment"])}</dd>
+                <dt>AWS Region</dt><dd>{esc(status["aws_region"])}</dd>
+                <dt>Storage Mode</dt><dd>{esc(status["storage"]["mode"])}</dd>
+                <dt>인증 서비스 ID</dt><dd>{esc(status["cognito"]["user_pool_id"] or "-")}</dd>
+                <dt>웹 클라이언트 ID</dt><dd>{esc(status["cognito"]["web_client_id"] or "-")}</dd>
+                <dt>데이터베이스 주소</dt><dd>{esc(rds.get("host", "-"))}</dd>
+                <dt>데이터베이스 포트</dt><dd>{esc(rds.get("port", "-"))}</dd>
+                <dt>응답 지연</dt><dd>{esc(str(rds.get("latency_ms", "-")) + (" ms" if "latency_ms" in rds else ""))}</dd>
+                <dt>운영 로그 그룹</dt><dd>{esc(status["cloudwatch"]["log_group"] or "-")}</dd>
+              </dl>
             </section>
             """,
         )
@@ -1424,15 +1367,14 @@ GET /api/audit-events</pre>
 </body>
 </html>"""
 
-    def payment_row(self, p: dict, user: dict) -> str:
+    def payment_row(self, p: dict) -> str:
         return f"""
         <tr>
           <td>{esc(p["id"])}</td>
           <td><span class="badge {esc(p["status"].lower())}">{esc(p["status"])}</span></td>
           <td>{esc(p["merchant"])}</td>
           <td>{esc(format_money(p["amount"]))}</td>
-          <td class="time-cell">{esc(format_datetime(p["created_at"]))}</td>
-          <td>{esc(actor_label(user, p["created_by"]))}</td>
+          <td>{esc(p["created_by"])}</td>
           <td><a href="/detail?id={esc(p["id"])}">보기</a></td>
         </tr>
         """
@@ -1456,9 +1398,6 @@ GET /api/audit-events</pre>
 
     def status_card(self, title: str, state: str, detail: str) -> str:
         return f'<article class="panel"><h2>{esc(title)}</h2><p class="state">{esc(state)}</p><p>{esc(detail)}</p></article>'
-
-    def kv_item(self, label: str, value: object) -> str:
-        return f'<div class="kv-item"><span>{esc(label)}</span><strong>{esc(value)}</strong></div>'
 
     def distribution(self, counts: dict[str, int]) -> str:
         total = sum(counts.values())
@@ -1628,7 +1567,7 @@ button:hover, .button:hover { background: var(--primary-dark); }
 .metrics .panel { border-top: 3px solid var(--primary); }
 .state { color: var(--primary); font-weight: 800; }
 .bars { display: grid; gap: 12px; }
-.bar-row { display: grid; grid-template-columns: 140px 1fr 48px; gap: 14px; align-items: center; }
+.bar-row { display: grid; grid-template-columns: 110px 1fr 48px; gap: 12px; align-items: center; }
 .bar-row span { color: var(--muted); font-weight: 800; }
 .bar-row strong { text-align: right; }
 .bar { height: 10px; overflow: hidden; background: #edf2f7; border-radius: 999px; }
@@ -1644,7 +1583,7 @@ th, td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: l
 th { color: var(--muted); font-size: 12px; text-transform: uppercase; background: var(--surface-soft); }
 tbody tr:hover { background: #f7fbfb; }
 .actions { display: flex; gap: 8px; }
-.badge { display: inline-block; min-width: 78px; text-align: center; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; background: #eef2f6; }
+.badge { display: inline-block; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; background: #eef2f6; }
 .badge.approved, .badge.success { color: var(--success); background: #ecfdf3; }
 .badge.pending { color: var(--warning); background: #fffaeb; }
 .badge.rejected, .badge.denied { color: var(--danger); background: #fef3f2; }
@@ -1653,11 +1592,6 @@ tbody tr:hover { background: #f7fbfb; }
 .alert.success { background: #ecfdf3; color: var(--success); border-color: #abefc6; }
 .steps { margin: 0; padding-left: 22px; line-height: 1.9; }
 pre { white-space: pre-wrap; background: #111827; color: #e6edf3; padding: 14px; border-radius: 6px; overflow-x: auto; }
-.time-cell { font-variant-numeric: tabular-nums; white-space: nowrap; color: #344054; }
-.kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-.kv-item { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); min-width: 0; }
-.kv-item span { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; }
-.kv-item strong { color: var(--text); font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
 @media (max-width: 820px) {
   header { height: auto; align-items: flex-start; flex-direction: column; padding: 16px; }
   nav { width: 100%; }
