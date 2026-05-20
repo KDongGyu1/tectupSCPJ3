@@ -1253,7 +1253,13 @@ class FinPayHandler(BaseHTTPRequestHandler):
         denied = sum(1 for e in visible_audit_events(data, user) if e["result"] == "Denied")
         total_amount = approved_amount(payments)
         recent_rows = "".join(self.payment_row(p, user) for p in payments[:5]) or '<tr><td colspan="7">표시할 결제가 없습니다.</td></tr>'
-        primary_link = '<a class="button" href="/payments/new">결제 생성</a>' if user["role"] == "Customer" else '<a class="button" href="/payments">결제 내역</a>'
+        dashboard_focus = {
+            "Customer": ("결제 요청", "새 결제 요청을 만들고 본인이 요청한 거래만 확인합니다.", '<a class="button" href="/payments/new">결제 생성</a>'),
+            "Merchant": ("가맹점 거래", "배정된 가맹점의 승인 거래와 정산 결과만 확인합니다.", '<a class="button" href="/merchant/settlements">정산 조회</a>'),
+            "SettlementOperator": ("승인 처리", "승인 대기 거래를 승인 또는 거절하는 업무만 담당합니다.", '<a class="button" href="/payments/review">승인 대기 보기</a>'),
+            "Auditor": ("감사 조회", "결제와 감사 이벤트를 읽기 전용으로 확인합니다.", '<a class="button" href="/audit/events">감사 이벤트</a>'),
+            "OperationsAdmin": ("운영 관리", "가맹점 배정과 승인 이후 정산, 취소, 환불 처리를 담당합니다.", '<a class="button" href="/merchant/settlements">정산 처리</a>'),
+        }[user["role"]]
         return self.page(
             "대시보드",
             user,
@@ -1266,15 +1272,15 @@ class FinPayHandler(BaseHTTPRequestHandler):
             </div>
             <section class="panel hero-panel">
               <div>
-                <h2>오늘의 운영 현황</h2>
-                <p>현재 역할에서 조회 가능한 거래와 승인 완료 금액을 기준으로 운영 상태를 확인합니다.</p>
+                <h2>{dashboard_focus[0]}</h2>
+                <p>{dashboard_focus[1]}</p>
               </div>
-              {primary_link}
+              {dashboard_focus[2]}
             </section>
             <section class="grid">
-              {self.status_card("결제 업무", "운영 중", "고객은 결제를 요청하고 정산 담당자는 승인 또는 거절합니다.")}
-              {self.status_card("접근 제어", "역할 기반", "사용자 역할에 따라 메뉴와 화면 접근 권한이 분리됩니다.")}
-              {self.status_card("감사 추적", f"{denied}건 차단", "로그인, 결제 처리, 차단 이벤트가 감사 이벤트로 기록됩니다.")}
+              {self.status_card("표시 범위", "역할 기준", "현재 계정에 허용된 거래와 메뉴만 표시됩니다.")}
+              {self.status_card("승인 대기", f"{pending}건", "승인이 필요한 거래 수입니다.")}
+              {self.status_card("접근 차단", f"{denied}건", "권한 없는 접근은 차단되고 감사 이벤트로 남습니다.")}
             </section>
             <section class="panel">
               <h2>결제 상태 분포</h2>
@@ -1442,30 +1448,46 @@ class FinPayHandler(BaseHTTPRequestHandler):
         review = ""
         if payment["status"] == "Pending" and user["role"] == "SettlementOperator":
             review = f"""
-            <div class="actions detail-actions">
-              <form method="post" action="/payments/{esc(payment["id"])}/approve"><button type="submit">승인</button></form>
-              <form method="post" action="/payments/{esc(payment["id"])}/reject"><button type="submit" class="danger-btn">거절</button></form>
-            </div>
+            <section class="action-panel">
+              <h2>승인 처리</h2>
+              <p>승인 대기 거래를 검토한 뒤 승인 또는 거절합니다.</p>
+              <div class="actions detail-actions">
+                <form method="post" action="/payments/{esc(payment["id"])}/approve"><button type="submit">승인</button></form>
+                <form method="post" action="/payments/{esc(payment["id"])}/reject"><button type="submit" class="danger-btn">거절</button></form>
+              </div>
+            </section>
             """
         if payment["status"] in {"Approved", "Settled"} and user["role"] == "Merchant" and payment["merchant"] in assigned_merchants(user, data):
             review += f"""
-            <div class="actions detail-actions">
-              <form method="post" action="/payments/{esc(payment["id"])}/refund-request"><button type="submit" class="secondary">환불 요청</button></form>
-            </div>
+            <section class="action-panel">
+              <h2>환불 요청</h2>
+              <p>고객 응대 또는 거래 취소 사유가 있을 때 운영 관리자에게 환불 처리를 요청합니다.</p>
+              <div class="actions detail-actions">
+                <form method="post" action="/payments/{esc(payment["id"])}/refund-request"><button type="submit" class="secondary">환불 요청</button></form>
+              </div>
+            </section>
             """
         if payment["status"] == "Approved" and user["role"] == "OperationsAdmin":
             review += f"""
-            <div class="actions detail-actions">
-              <form method="post" action="/payments/{esc(payment["id"])}/settle"><button type="submit">정산 완료</button></form>
-              <form method="post" action="/payments/{esc(payment["id"])}/cancel"><button type="submit" class="danger-btn">거래 취소</button></form>
-            </div>
+            <section class="action-panel">
+              <h2>정산 처리</h2>
+              <p>승인 완료 거래를 정산 완료로 전환하거나 운영 사유로 취소합니다.</p>
+              <div class="actions detail-actions">
+                <form method="post" action="/payments/{esc(payment["id"])}/settle"><button type="submit">정산 완료</button></form>
+                <form method="post" action="/payments/{esc(payment["id"])}/cancel"><button type="submit" class="danger-btn">거래 취소</button></form>
+              </div>
+            </section>
             """
         if payment["status"] == "RefundRequested" and user["role"] == "OperationsAdmin":
             review += f"""
-            <div class="actions detail-actions">
-              <form method="post" action="/payments/{esc(payment["id"])}/refund"><button type="submit">환불 완료</button></form>
-              <form method="post" action="/payments/{esc(payment["id"])}/refund-reject"><button type="submit" class="secondary">환불 반려</button></form>
-            </div>
+            <section class="action-panel refund-panel">
+              <h2>환불 검토</h2>
+              <p>가맹점이 요청한 환불 건을 확인한 뒤 완료 또는 반려 처리합니다.</p>
+              <div class="actions detail-actions">
+                <form method="post" action="/payments/{esc(payment["id"])}/refund"><button type="submit">환불 완료</button></form>
+                <form method="post" action="/payments/{esc(payment["id"])}/refund-reject"><button type="submit" class="secondary">환불 반려</button></form>
+              </div>
+            </section>
             """
 
         timeline = "".join(
@@ -1600,11 +1622,49 @@ class FinPayHandler(BaseHTTPRequestHandler):
               <td>{esc(format_money(settlement_amount(merchant_payments)))}</td>
             </tr>
             """
-        refund_rows = "".join(
-            self.payment_row(p, user)
-            for p in payments
-            if p["status"] in {"RefundRequested", "Refunded"}
-        ) or '<tr><td colspan="7">환불 요청 또는 환불 완료 결제가 없습니다.</td></tr>'
+        if user["role"] == "OperationsAdmin":
+            pending_settlement_rows = "".join(
+                self.settlement_action_row(p)
+                for p in payments
+                if p["status"] == "Approved"
+            ) or '<tr><td colspan="7">정산 대기 거래가 없습니다.</td></tr>'
+            completed_settlement_rows = "".join(
+                self.payment_row(p, user)
+                for p in payments
+                if p["status"] == "Settled"
+            ) or '<tr><td colspan="7">정산 완료 거래가 없습니다.</td></tr>'
+            action_section = f"""
+            <section class="panel">
+              <h2>정산 대기 거래</h2>
+              <p class="muted">승인 완료된 거래를 이 화면에서 바로 정산 완료 처리합니다.</p>
+              <table>
+                <thead><tr><th>ID</th><th>가맹점</th><th>금액</th><th>생성 시간</th><th>생성자</th><th>상세</th><th>처리</th></tr></thead>
+                <tbody>{pending_settlement_rows}</tbody>
+              </table>
+            </section>
+            <section class="panel">
+              <h2>정산 완료 이력</h2>
+              <table>
+                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성 시간</th><th>생성자</th><th>상세</th></tr></thead>
+                <tbody>{completed_settlement_rows}</tbody>
+              </table>
+            </section>
+            """
+        else:
+            merchant_payment_rows = "".join(
+                self.payment_row(p, user)
+                for p in payments
+                if p["status"] in {"Approved", "Settled"}
+            ) or '<tr><td colspan="7">표시할 승인 또는 정산 완료 거래가 없습니다.</td></tr>'
+            action_section = f"""
+            <section class="panel">
+              <h2>정산 대상 거래</h2>
+              <table>
+                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성 시간</th><th>생성자</th><th>상세</th></tr></thead>
+                <tbody>{merchant_payment_rows}</tbody>
+              </table>
+            </section>
+            """
         return self.page(
             "정산 조회",
             user,
@@ -1613,7 +1673,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
               {self.metric("담당 가맹점", len(assigned))}
               {self.metric("승인 결제 금액", format_money(approved_amount(payments)))}
               {self.metric("정산 완료 금액", format_money(settlement_amount(payments)))}
-              {self.metric("환불 요청", count_by_status(payments)["RefundRequested"])}
+              {self.metric("정산 대기", count_by_status(payments)["Approved"])}
             </div>
             <section class="panel">
               <h2>가맹점별 정산 요약</h2>
@@ -1622,13 +1682,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
                 <tbody>{rows}</tbody>
               </table>
             </section>
-            <section class="panel">
-              <h2>환불 요청 현황</h2>
-              <table>
-                <thead><tr><th>ID</th><th>상태</th><th>가맹점</th><th>금액</th><th>생성 시간</th><th>생성자</th><th>상세</th></tr></thead>
-                <tbody>{refund_rows}</tbody>
-              </table>
-            </section>
+            {action_section}
             """,
         )
 
@@ -1760,38 +1814,26 @@ class FinPayHandler(BaseHTTPRequestHandler):
         status = integration_status()
         rds = status["rds"]
         secret_state = "설정됨" if status["secrets_manager"]["configured"] else "미설정"
+        rds_state = "연결 가능" if rds["status"] == "reachable" else "확인 필요"
         return self.page(
             "시스템 상태",
             user,
             f"""
             <div class="grid">
               {self.status_card("서비스 런타임", "정상", "애플리케이션 프로세스가 실행 중입니다.")}
-              {self.status_card("데이터 저장", status["storage"]["mode"], status["storage"]["warning"] or "정상")}
-              {self.status_card("데이터베이스", rds["status"], "VPC 내부 앱 서버에서 연결 상태를 확인합니다.")}
+              {self.status_card("데이터 저장", "운영 DB", status["storage"]["warning"] or "정상")}
+              {self.status_card("데이터베이스", rds_state, "VPC 내부 앱 서버에서만 연결 상태를 확인합니다.")}
               {self.status_card("보안 저장소", secret_state, "민감정보는 관리형 비밀 저장소에서 조회합니다.")}
-              {self.status_card("점검 API", "정상", "상태 점검 경로가 제공됩니다.")}
+              {self.status_card("운영 로그", "설정됨" if status["cloudwatch"]["configured"] else "미설정", "주요 서비스 이벤트를 운영 로그로 전송합니다.")}
             </div>
             <section class="panel">
-              <h2>상태 점검 경로</h2>
-              <pre>GET /api/health
-GET /api/db-check
-GET /api/config
-GET /api/me
-GET /api/payments
-GET /api/audit-events</pre>
-            </section>
-            <section class="panel">
-              <h2>서비스 연동 설정</h2>
+              <h2>서비스 연동 상태</h2>
               <div class="kv-grid">
-                {self.kv_item("환경", status["environment"])}
-                {self.kv_item("리전", status["aws_region"])}
-                {self.kv_item("저장 방식", status["storage"]["mode"])}
-                {self.kv_item("인증 서비스 ID", status["cognito"]["user_pool_id"] or "-")}
-                {self.kv_item("웹 클라이언트 ID", status["cognito"]["web_client_id"] or "-")}
-                {self.kv_item("데이터베이스 주소", rds.get("host", "-"))}
-                {self.kv_item("데이터베이스 포트", rds.get("port", "-"))}
+                {self.kv_item("인증", "연동됨" if status["cognito"]["configured"] else "미설정")}
+                {self.kv_item("데이터베이스", rds_state)}
+                {self.kv_item("비밀값 저장소", secret_state)}
+                {self.kv_item("운영 로그", "연동됨" if status["cloudwatch"]["configured"] else "미설정")}
                 {self.kv_item("응답 지연", str(rds.get("latency_ms", "-")) + (" ms" if "latency_ms" in rds else ""))}
-                {self.kv_item("운영 로그 그룹", status["cloudwatch"]["log_group"] or "-")}
               </div>
             </section>
             """,
@@ -1872,6 +1914,23 @@ GET /api/audit-events</pre>
           <td class="actions">
             <form method="post" action="/payments/{esc(p["id"])}/approve"><button type="submit">승인</button></form>
             <form method="post" action="/payments/{esc(p["id"])}/reject"><button type="submit" class="danger-btn">거절</button></form>
+          </td>
+        </tr>
+        """
+
+    def settlement_action_row(self, p: dict) -> str:
+        return f"""
+        <tr>
+          <td><a href="/detail?id={esc(p["id"])}">{esc(p["id"])}</a></td>
+          <td>{esc(p["merchant"])}</td>
+          <td>{esc(format_money(p["amount"]))}</td>
+          <td class="time-cell">{esc(format_datetime(p["created_at"]))}</td>
+          <td>{esc(p["created_by"])}</td>
+          <td><a href="/detail?id={esc(p["id"])}">보기</a></td>
+          <td>
+            <form method="post" action="/payments/{esc(p["id"])}/settle">
+              <button type="submit" class="small">정산 완료</button>
+            </form>
           </td>
         </tr>
         """
@@ -2074,6 +2133,10 @@ button:hover, .button:hover { background: var(--primary-dark); }
 .detail dt { color: var(--muted); font-weight: 800; }
 .detail dd { margin: 0; }
 .detail-actions { margin-bottom: 16px; }
+.action-panel { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 18px 0; background: var(--surface-soft); }
+.action-panel h2 { margin-bottom: 8px; }
+.action-panel p { margin-top: 0; color: var(--muted); }
+.refund-panel { border-color: #fedf89; background: #fffbeb; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; overflow: hidden; }
 th, td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
 th { color: var(--muted); font-size: 12px; text-transform: uppercase; background: var(--surface-soft); }
