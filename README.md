@@ -321,7 +321,7 @@ aws sts get-caller-identity
 aws sts get-caller-identity --profile fintech
 ```
 
-다른 계정의 Role을 Assume하는 경우 `terraform.tfvars`에 다음 값을 설정할 수 있습니다.
+다른 계정의 Role을 Assume하는 경우 `terraform.tfvars.example`을 참고해 로컬 전용 변수 파일을 만들고 다음 값을 설정할 수 있습니다. 실제 변수 파일은 계정 정보와 환경값이 들어갈 수 있으므로 Git에 커밋하지 않습니다.
 
 ```hcl
 aws_profile              = "fintech"
@@ -331,13 +331,15 @@ assume_role_session_name = "finpay-terraform"
 
 ## 7. 사용 방법
 
-### 1단계: 변수 파일 생성
+### 1단계: 로컬 변수 파일 생성
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-### 2단계: `terraform.tfvars` 수정
+> `terraform.tfvars`는 로컬 실행용 파일입니다. Git에는 `terraform.tfvars.example`만 올리고, 실제 `terraform.tfvars`는 `.gitignore`로 제외합니다.
+
+### 2단계: 로컬 변수 값 수정
 
 예시:
 
@@ -346,32 +348,12 @@ project_name = "finpay"
 environment  = "dev"
 aws_region   = "ap-northeast-2"
 
-aws_profile = "fintech"
 
-vpc_cidr            = "10.0.0.0/16"
-az_names            = ["ap-northeast-2a", "ap-northeast-2c"]
-public_subnet_cidrs = ["10.0.0.0/24", "10.0.1.0/24"]
-app_subnet_cidrs    = ["10.0.10.0/24", "10.0.11.0/24"]
-db_subnet_cidrs     = ["10.0.20.0/24", "10.0.21.0/24"]
-
-allowed_http_cidr_blocks = ["0.0.0.0/0"]
-alb_certificate_arn      = ""
-
-alert_email = "your-email@example.com"
-
-app_instance_type    = "t3.micro"
-app_desired_capacity = 1
-app_min_size         = 1
-app_max_size         = 2
-
-db_instance_class = "db.t4g.micro"
-db_name           = "finpay"
-
-enable_guardduty       = false
-enable_securityhub     = false
-enable_aws_config      = false
-enable_log_object_lock = false
+# 실제 CIDR, 이메일, 인증서 ARN, DB 설정은 로컬 terraform.tfvars에만 작성합니다.
+# 저장소에는 terraform.tfvars.example만 커밋합니다.
 ```
+실제 VPC CIDR, Subnet CIDR, alert_email, 인증서 ARN, DB 이름 등 환경별 값은
+terraform.tfvars에만 작성하고 Git에는 커밋하지 않습니다.
 
 ### 3단계: 초기화
 
