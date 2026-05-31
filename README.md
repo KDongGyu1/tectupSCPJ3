@@ -224,6 +224,16 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 | `enable_aws_config` | `false` | AWS Config 및 Managed Rule 활성화 여부 |
 | `enable_alb_access_logs` | `false` | ALB Access Log 활성화 여부 |
 | `enable_log_object_lock` | `false` | S3 Object Lock 기본 보존 설정 활성화 여부 |
+| `enable_cloudfront_origin_only_alb_access` | `false` | ALB 직접 접근을 줄이기 위해 CloudFront origin-facing prefix list만 허용 |
+| `enable_https_listener` | `false` | ACM 인증서가 있을 때 ALB HTTPS Listener 생성 |
+| `enable_http_redirect` | `false` | HTTPS Listener가 있을 때 ALB HTTP 80을 HTTPS로 리다이렉트 |
+| `enable_cloudfront_origin_https` | `false` | CloudFront에서 ALB Origin으로 HTTPS 사용 |
+| `cloudfront_origin_domain_name` | `""` | CloudFront가 ALB Origin에 HTTPS로 접속할 때 사용할 Origin DNS 이름 |
+| `cloudfront_aliases` | `[]` | CloudFront에 연결할 커스텀 도메인 목록 |
+| `cloudfront_acm_certificate_arn` | `""` | CloudFront 커스텀 도메인에 사용할 us-east-1 ACM 인증서 ARN |
+| `enable_interface_endpoint_policy_restrictions` | `false` | Interface Endpoint 정책을 서비스별 허용 Action으로 제한 |
+
+CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-east-1`에 생성해야 합니다. CloudFront -> ALB 구간을 HTTPS로 전환하는 경우 ALB 인증서의 도메인과 CloudFront Origin Domain Name이 일치해야 하므로, `origin.example.com` 같은 별도 CNAME을 ALB DNS 이름으로 연결한 뒤 `cloudfront_origin_domain_name`에 설정합니다.
 
 ## 4. 디렉터리 구조
 
@@ -604,6 +614,8 @@ terraform destroy
 
 - ALB HTTP 80을 HTTPS 443으로 리다이렉트
 - ACM 인증서 연결
+- CloudFront -> ALB Origin HTTPS 전환
+- App -> RDS `sslmode=require` 이상 유지
 - Route 53 도메인 연결
 - WAF Rate Rule을 `count`에서 `block`으로 단계적 전환
 - `allowed_http_cidr_blocks` 범위 검토

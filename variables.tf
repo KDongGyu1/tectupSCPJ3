@@ -70,8 +70,56 @@ variable "allowed_http_cidr_blocks" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "enable_cloudfront_origin_only_alb_access" {
+  description = "Restrict ALB HTTP/HTTPS ingress to the AWS-managed CloudFront origin-facing prefix list."
+  type        = bool
+  default     = false
+}
+
 variable "alb_certificate_arn" {
-  description = "Optional ACM certificate ARN for HTTPS listener."
+  description = "Deprecated alias for acm_certificate_arn. Optional ACM certificate ARN for HTTPS listener."
+  type        = string
+  default     = ""
+}
+
+variable "acm_certificate_arn" {
+  description = "Optional ACM certificate ARN for ALB HTTPS listener. Overrides alb_certificate_arn when set."
+  type        = string
+  default     = ""
+}
+
+variable "enable_https_listener" {
+  description = "Create the ALB HTTPS listener when an ACM certificate ARN is provided."
+  type        = bool
+  default     = false
+}
+
+variable "enable_http_redirect" {
+  description = "Redirect ALB HTTP requests to HTTPS when the HTTPS listener is enabled."
+  type        = bool
+  default     = false
+}
+
+variable "enable_cloudfront_origin_https" {
+  description = "Use HTTPS from CloudFront to the ALB. Requires enable_https_listener and an ACM certificate ARN."
+  type        = bool
+  default     = false
+}
+
+variable "cloudfront_aliases" {
+  description = "Optional custom domain aliases for the CloudFront distribution. Requires a us-east-1 ACM certificate."
+  type        = list(string)
+  default     = []
+}
+
+variable "cloudfront_acm_certificate_arn" {
+  description = "Optional us-east-1 ACM certificate ARN for CloudFront custom aliases."
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_origin_domain_name" {
+  description = "Optional custom origin DNS name for CloudFront to reach the ALB, such as origin.example.com. Required when CloudFront origin HTTPS uses an ALB certificate for that hostname."
   type        = string
   default     = ""
 }
@@ -118,6 +166,17 @@ variable "alert_email" {
   default     = ""
 }
 
+variable "rds_sslmode" {
+  description = "PostgreSQL client sslmode used by the app when connecting to RDS."
+  type        = string
+  default     = "require"
+
+  validation {
+    condition     = contains(["disable", "allow", "prefer", "require", "verify-ca", "verify-full"], var.rds_sslmode)
+    error_message = "rds_sslmode must be one of disable, allow, prefer, require, verify-ca, or verify-full."
+  }
+}
+
 variable "app_base_url" {
   description = "Optional public application base URL override used for Cognito Hosted UI callback and logout URLs. Leave empty to use the CloudFront distribution URL."
   type        = string
@@ -134,6 +193,47 @@ variable "enable_alb_access_logs" {
   description = "Enable ALB access logs. Keep false when using the KMS/Object Lock central log bucket because ALB log delivery has stricter S3 requirements."
   type        = bool
   default     = false
+}
+
+variable "s3_gateway_endpoint_bucket_arns" {
+  description = "Additional S3 bucket/object ARNs allowed through the S3 Gateway Endpoint policy."
+  type        = list(string)
+  default     = []
+}
+
+variable "enable_interface_endpoint_policy_restrictions" {
+  description = "Apply service-scoped policies to Interface Endpoints. Keep false until SSM and runtime calls are verified."
+  type        = bool
+  default     = false
+}
+
+variable "waf_rate_rule_action" {
+  description = "Action for custom WAF rate-based rules."
+  type        = string
+  default     = "count"
+
+  validation {
+    condition     = contains(["count", "block"], var.waf_rate_rule_action)
+    error_message = "waf_rate_rule_action must be count or block."
+  }
+}
+
+variable "waf_rate_limits" {
+  description = "Path-specific WAF rate limits evaluated per source IP."
+  type = object({
+    auth         = number
+    payments     = number
+    transactions = number
+    ops          = number
+    audit        = number
+  })
+  default = {
+    auth         = 300
+    payments     = 500
+    transactions = 1000
+    ops          = 100
+    audit        = 100
+  }
 }
 
 variable "enable_guardduty" {

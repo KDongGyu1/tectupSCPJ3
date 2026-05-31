@@ -37,6 +37,7 @@ APP_CONFIG = {
     "db_name": os.environ.get("DB_NAME", "finpay"),
     "db_user": os.environ.get("DB_USER", ""),
     "db_password": os.environ.get("DB_PASSWORD", ""),
+    "rds_sslmode": os.environ.get("RDS_SSLMODE", "require"),
     "cloudwatch_log_group": os.environ.get("CLOUDWATCH_LOG_GROUP", ""),
     "cloudwatch_log_stream": os.environ.get("CLOUDWATCH_LOG_STREAM", ""),
 }
@@ -373,7 +374,11 @@ def postgres_conninfo() -> str:
     if not host or not user or not password:
         raise RuntimeError("PostgreSQL credentials are incomplete. Set DATABASE_URL or DB_USER/DB_PASSWORD/RDS_ENDPOINT.")
 
-    return f"host={host} port={port} dbname={dbname} user={user} password={password} connect_timeout=3"
+    sslmode = APP_CONFIG["rds_sslmode"].strip()
+    conninfo = f"host={host} port={port} dbname={dbname} user={user} password={password} connect_timeout=3"
+    if sslmode:
+        conninfo = f"{conninfo} sslmode={sslmode}"
+    return conninfo
 
 
 def postgres_connect():

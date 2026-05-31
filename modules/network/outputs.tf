@@ -6,3 +6,4 @@ output "db_subnet_ids" { value = [for subnet in aws_subnet.db : subnet.id] }
 output "public_route_table_id" { value = aws_route_table.public.id }
 output "app_route_table_ids" { value = [for rt in aws_route_table.app : rt.id] }
 output "db_route_table_id" { value = aws_route_table.db.id }
+output "s3_gateway_endpoint_id" { value = aws_vpc_endpoint.s3.id }

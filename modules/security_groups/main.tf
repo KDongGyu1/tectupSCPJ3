@@ -1,3 +1,8 @@
+data "aws_ec2_managed_prefix_list" "cloudfront_origin_facing" {
+  count = var.enable_cloudfront_origin_only_alb_access ? 1 : 0
+  name  = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
 resource "aws_security_group" "alb" {
   name        = "${var.name_prefix}-alb-sg"
   description = "Public ALB ingress"
@@ -8,7 +13,10 @@ resource "aws_security_group" "alb" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = var.allowed_http_cidr_blocks
+    cidr_blocks = var.enable_cloudfront_origin_only_alb_access ? [] : var.allowed_http_cidr_blocks
+    prefix_list_ids = var.enable_cloudfront_origin_only_alb_access ? [
+      data.aws_ec2_managed_prefix_list.cloudfront_origin_facing[0].id
+    ] : []
   }
 
   ingress {
@@ -16,10 +24,15 @@ resource "aws_security_group" "alb" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = var.allowed_http_cidr_blocks
+    cidr_blocks = var.enable_cloudfront_origin_only_alb_access ? [] : var.allowed_http_cidr_blocks
+    prefix_list_ids = var.enable_cloudfront_origin_only_alb_access ? [
+      data.aws_ec2_managed_prefix_list.cloudfront_origin_facing[0].id
+    ] : []
   }
 
   egress {
+    # App SG ingress is the effective ALB-to-App boundary; converting this to a
+    # destination SG rule would require separating SG rules to avoid cycles.
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
@@ -51,6 +64,8 @@ resource "aws_security_group" "app" {
   }
 
   egress {
+    # DB SG ingress restricts the destination to the DB tier; keep CIDR egress
+    # until SG rules are split into standalone resources.
     description = "PostgreSQL to DB"
     from_port   = 5432
     to_port     = 5432

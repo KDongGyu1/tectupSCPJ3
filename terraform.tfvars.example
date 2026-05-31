@@ -14,7 +14,16 @@ app_subnet_cidrs    = ["10.0.10.0/24", "10.0.11.0/24"]
 db_subnet_cidrs     = ["10.0.20.0/24", "10.0.21.0/24"]
 
 allowed_http_cidr_blocks = ["0.0.0.0/0"]
+enable_cloudfront_origin_only_alb_access = false
 alb_certificate_arn      = ""
+acm_certificate_arn      = ""
+enable_https_listener    = false
+enable_http_redirect     = false
+# Requires enable_https_listener=true and an ACM certificate for the ALB origin.
+enable_cloudfront_origin_https = false
+cloudfront_origin_domain_name  = ""
+cloudfront_aliases             = []
+cloudfront_acm_certificate_arn = ""
 
 app_instance_type    = "t3.micro"
 app_desired_capacity = 1
@@ -23,12 +32,29 @@ app_max_size         = 2
 
 db_instance_class = "db.t4g.micro"
 db_name           = "finpay"
+rds_sslmode       = "require"
 alert_email       = ""
 
-enable_alb_access_logs     = false
-enable_guardduty           = false
-enable_securityhub         = false
-enable_aws_config          = false
-rds_backup_retention_period = 1
-enable_log_object_lock     = false
+enable_alb_access_logs                      = false
+enable_guardduty                            = false
+enable_securityhub                          = false
+enable_aws_config                           = false
+rds_backup_retention_period                 = 1
+enable_log_object_lock                      = false
 log_object_lock_retention_days = 365
+
+# Additional buckets allowed through the S3 Gateway Endpoint policy.
+# The app artifact bucket is automatically allowed by the root module.
+s3_gateway_endpoint_bucket_arns = []
+
+# Keep false until SSM and app runtime endpoint calls are verified.
+enable_interface_endpoint_policy_restrictions = false
+
+waf_rate_rule_action = "count"
+waf_rate_limits = {
+  auth         = 300
+  payments     = 500
+  transactions = 1000
+  ops          = 100
+  audit        = 100
+}
