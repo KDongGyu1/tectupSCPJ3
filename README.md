@@ -9,7 +9,7 @@ FinPay는 고객, 가맹점, 운영자, 감사자 역할을 가진 결제 서비
 본 Terraform 코드는 애플리케이션이 안전하게 동작할 수 있도록 다음 보안 원칙을 인프라 수준에서 구현합니다.
 
 - Public / App / DB 계층 분리
-- 외부 진입점 ALB 단일화
+- 외부 진입점 CloudFront 및 ALB 계층화
 - App 계층과 DB 계층의 직접 외부 노출 차단
 - Security Group 기반 최소 접근 제어
 - WAF를 통한 웹 공격 방어
@@ -28,7 +28,10 @@ FinPay는 고객, 가맹점, 운영자, 감사자 역할을 가진 결제 서비
 Internet
    |
    v
-AWS WAF
+CloudFront
+   |
+   v
+AWS WAF (Regional Web ACL on ALB)
    |
    v
 Public ALB
@@ -45,6 +48,9 @@ Isolated DB Subnets
    v
 RDS PostgreSQL Multi-AZ
 ```
+
+기본 배포에서는 WAF가 **ALB에 연결된 Regional Web ACL**로 동작합니다.  
+CloudFront 커스텀 도메인과 Origin HTTPS를 활성화하면 사용자 트래픽은 `CloudFront -> ALB -> App -> RDS` 흐름을 따르며, ALB에 연결된 WAF가 Origin으로 들어오는 요청을 검사합니다.
 
 보안 및 운영 계층은 다음과 같이 함께 구성됩니다.
 
