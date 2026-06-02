@@ -262,7 +262,9 @@ CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-ea
 │   ├── app-runtime-standards.md
 │   ├── architecture.md
 │   ├── iam-role-specification.md
+│   ├── https-migration-owner-yunjeongwoo.md
 │   ├── network-access-control-compliance.md
+│   ├── network-transport-security.md
 │   ├── security-policy-matrix.md
 │   ├── team-evidence-template.md
 │   └── terraform-operations-runbook.md
@@ -291,7 +293,9 @@ CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-ea
 | `docs/architecture.md` | 전체 AWS 보안 아키텍처와 네트워크 흐름 설명 |
 | `docs/security-policy-matrix.md` | 역할, 권한, 보안 정책 매핑 |
 | `docs/iam-role-specification.md` | IAM Role, AssumeRole, MFA 기반 접근 구조 설명 |
+| `docs/https-migration-owner-yunjeongwoo.md` | 윤정우 담당 CloudFront, ALB, ACM, DNS 기반 HTTPS 전환 설계와 증적 계획 |
 | `docs/network-access-control-compliance.md` | Security Group, WAF, VPC Endpoint, ALB 우회 접근 점검 기준 |
+| `docs/network-transport-security.md` | 네트워크 전송보안 구현 상태와 심화 개선 후보 |
 | `docs/app-runtime-standards.md` | App 서버 런타임, 포트, health check, 운영 기준 |
 | `docs/app-inspection-commands.md` | App/ALB/EC2/CloudWatch 점검 명령어 모음 |
 | `docs/app-operations-compliance.md` | App 운영 보안과 감사 대응 기준 |
