@@ -13,4 +13,25 @@ locals {
       db_cidr     = var.db_subnet_cidrs[1]
     }
   }
+
+  s3_gateway_endpoint_policy_statements = length(var.s3_gateway_endpoint_bucket_arns) == 0 ? [
+    {
+      Sid       = "DenyS3EndpointUntilAllowedBucketsConfigured"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = ["s3:*"]
+      Resource  = ["*"]
+    }
+    ] : [
+    {
+      Sid       = "AllowConfiguredS3Buckets"
+      Effect    = "Allow"
+      Principal = "*"
+      Action = [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ]
+      Resource = var.s3_gateway_endpoint_bucket_arns
+    }
+  ]
 }

@@ -9,7 +9,7 @@ FinPay는 고객, 가맹점, 운영자, 감사자 역할을 가진 결제 서비
 본 Terraform 코드는 애플리케이션이 안전하게 동작할 수 있도록 다음 보안 원칙을 인프라 수준에서 구현합니다.
 
 - Public / App / DB 계층 분리
-- 외부 진입점 ALB 단일화
+- 외부 진입점 CloudFront 및 ALB 계층화
 - App 계층과 DB 계층의 직접 외부 노출 차단
 - Security Group 기반 최소 접근 제어
 - WAF를 통한 웹 공격 방어
@@ -28,7 +28,10 @@ FinPay는 고객, 가맹점, 운영자, 감사자 역할을 가진 결제 서비
 Internet
    |
    v
-AWS WAF
+CloudFront
+   |
+   v
+AWS WAF (Regional Web ACL on ALB)
    |
    v
 Public ALB
@@ -45,6 +48,9 @@ Isolated DB Subnets
    v
 RDS PostgreSQL Multi-AZ
 ```
+
+기본 배포에서는 WAF가 **ALB에 연결된 Regional Web ACL**로 동작합니다.  
+CloudFront 커스텀 도메인과 Origin HTTPS를 활성화하면 사용자 트래픽은 `CloudFront -> ALB -> App -> RDS` 흐름을 따르며, ALB에 연결된 WAF가 Origin으로 들어오는 요청을 검사합니다.
 
 보안 및 운영 계층은 다음과 같이 함께 구성됩니다.
 
@@ -224,6 +230,16 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 | `enable_aws_config` | `false` | AWS Config 및 Managed Rule 활성화 여부 |
 | `enable_alb_access_logs` | `false` | ALB Access Log 활성화 여부 |
 | `enable_log_object_lock` | `false` | S3 Object Lock 기본 보존 설정 활성화 여부 |
+| `enable_cloudfront_origin_only_alb_access` | `false` | ALB 직접 접근을 줄이기 위해 CloudFront origin-facing prefix list만 허용 |
+| `enable_https_listener` | `false` | ACM 인증서가 있을 때 ALB HTTPS Listener 생성 |
+| `enable_http_redirect` | `false` | HTTPS Listener가 있을 때 ALB HTTP 80을 HTTPS로 리다이렉트 |
+| `enable_cloudfront_origin_https` | `false` | CloudFront에서 ALB Origin으로 HTTPS 사용 |
+| `cloudfront_origin_domain_name` | `""` | CloudFront가 ALB Origin에 HTTPS로 접속할 때 사용할 Origin DNS 이름 |
+| `cloudfront_aliases` | `[]` | CloudFront에 연결할 커스텀 도메인 목록 |
+| `cloudfront_acm_certificate_arn` | `""` | CloudFront 커스텀 도메인에 사용할 us-east-1 ACM 인증서 ARN |
+| `enable_interface_endpoint_policy_restrictions` | `false` | Interface Endpoint 정책을 서비스별 허용 Action으로 제한 |
+
+CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-east-1`에 생성해야 합니다. CloudFront -> ALB 구간을 HTTPS로 전환하는 경우 ALB 인증서의 도메인과 CloudFront Origin Domain Name이 일치해야 하므로, `origin.example.com` 같은 별도 CNAME을 ALB DNS 이름으로 연결한 뒤 `cloudfront_origin_domain_name`에 설정합니다.
 
 ## 4. 디렉터리 구조
 
@@ -246,7 +262,9 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 │   ├── app-runtime-standards.md
 │   ├── architecture.md
 │   ├── iam-role-specification.md
+│   ├── https-migration-owner-yunjeongwoo.md
 │   ├── network-access-control-compliance.md
+│   ├── network-transport-security.md
 │   ├── security-policy-matrix.md
 │   ├── team-evidence-template.md
 │   └── terraform-operations-runbook.md
@@ -275,7 +293,9 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 | `docs/architecture.md` | 전체 AWS 보안 아키텍처와 네트워크 흐름 설명 |
 | `docs/security-policy-matrix.md` | 역할, 권한, 보안 정책 매핑 |
 | `docs/iam-role-specification.md` | IAM Role, AssumeRole, MFA 기반 접근 구조 설명 |
+| `docs/https-migration-owner-yunjeongwoo.md` | 윤정우 담당 CloudFront, ALB, ACM, DNS 기반 HTTPS 전환 설계와 증적 계획 |
 | `docs/network-access-control-compliance.md` | Security Group, WAF, VPC Endpoint, ALB 우회 접근 점검 기준 |
+| `docs/network-transport-security.md` | 네트워크 전송보안 구현 상태와 심화 개선 후보 |
 | `docs/app-runtime-standards.md` | App 서버 런타임, 포트, health check, 운영 기준 |
 | `docs/app-inspection-commands.md` | App/ALB/EC2/CloudWatch 점검 명령어 모음 |
 | `docs/app-operations-compliance.md` | App 운영 보안과 감사 대응 기준 |
@@ -604,6 +624,8 @@ terraform destroy
 
 - ALB HTTP 80을 HTTPS 443으로 리다이렉트
 - ACM 인증서 연결
+- CloudFront -> ALB Origin HTTPS 전환
+- App -> RDS `sslmode=require` 이상 유지
 - Route 53 도메인 연결
 - WAF Rate Rule을 `count`에서 `block`으로 단계적 전환
 - `allowed_http_cidr_blocks` 범위 검토

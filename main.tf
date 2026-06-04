@@ -14,24 +14,32 @@ module "network" {
   public_subnet_cidrs = var.public_subnet_cidrs
   app_subnet_cidrs    = var.app_subnet_cidrs
   db_subnet_cidrs     = var.db_subnet_cidrs
+  s3_gateway_endpoint_bucket_arns = distinct(concat(var.s3_gateway_endpoint_bucket_arns, [
+    "arn:aws:s3:::al2023-repos-${var.aws_region}-de612dc2",
+    "arn:aws:s3:::al2023-repos-${var.aws_region}-de612dc2/*",
+    "arn:aws:s3:::${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}",
+    "arn:aws:s3:::${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}/tmp/*",
+  ]))
 }
 
 module "security_groups" {
   source = "./modules/security_groups"
 
-  name_prefix              = local.name_prefix
-  vpc_id                   = module.network.vpc_id
-  vpc_cidr                 = module.network.vpc_cidr
-  allowed_http_cidr_blocks = var.allowed_http_cidr_blocks
+  name_prefix                              = local.name_prefix
+  vpc_id                                   = module.network.vpc_id
+  vpc_cidr                                 = module.network.vpc_cidr
+  allowed_http_cidr_blocks                 = var.allowed_http_cidr_blocks
+  enable_cloudfront_origin_only_alb_access = var.enable_cloudfront_origin_only_alb_access
 }
 
 module "vpc_endpoints" {
   source = "./modules/vpc_endpoints"
 
-  name_prefix        = local.name_prefix
-  vpc_id             = module.network.vpc_id
-  app_subnet_ids     = module.network.app_subnet_ids
-  vpc_endpoint_sg_id = module.security_groups.vpc_endpoint_sg_id
+  name_prefix                         = local.name_prefix
+  vpc_id                              = module.network.vpc_id
+  app_subnet_ids                      = module.network.app_subnet_ids
+  vpc_endpoint_sg_id                  = module.security_groups.vpc_endpoint_sg_id
+  enable_endpoint_policy_restrictions = var.enable_interface_endpoint_policy_restrictions
 }
 
 module "iam" {
@@ -55,31 +63,38 @@ module "logging" {
 module "app" {
   source = "./modules/app"
 
-  name_prefix                = local.name_prefix
-  environment                = var.environment
-  aws_region                 = var.aws_region
-  vpc_id                     = module.network.vpc_id
-  public_subnet_ids          = module.network.public_subnet_ids
-  app_subnet_ids             = module.network.app_subnet_ids
-  alb_sg_id                  = module.security_groups.alb_sg_id
-  app_sg_id                  = module.security_groups.app_sg_id
-  app_instance_profile_name  = module.iam.app_instance_profile_name
-  logs_kms_key_arn           = module.kms.logs_kms_key_arn
-  central_logs_bucket        = module.logging.central_logs_bucket
-  enable_alb_access_logs     = var.enable_alb_access_logs
-  alb_certificate_arn        = var.alb_certificate_arn
-  app_instance_type          = var.app_instance_type
-  app_desired_capacity       = var.app_desired_capacity
-  app_min_size               = var.app_min_size
-  app_max_size               = var.app_max_size
-  cognito_user_pool_id       = module.auth.cognito_user_pool_id
-  cognito_web_client_id      = module.auth.cognito_web_client_id
-  cognito_hosted_ui_base_url = module.auth.cognito_hosted_ui_base_url
-  app_base_url               = var.app_base_url
-  rds_endpoint               = module.data.rds_endpoint
-  rds_master_secret_arn      = module.data.rds_master_secret_arn
-  app_artifact_bucket        = "${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}"
-  app_artifact_key           = "tmp/server.py"
+  name_prefix                    = local.name_prefix
+  environment                    = var.environment
+  aws_region                     = var.aws_region
+  vpc_id                         = module.network.vpc_id
+  public_subnet_ids              = module.network.public_subnet_ids
+  app_subnet_ids                 = module.network.app_subnet_ids
+  alb_sg_id                      = module.security_groups.alb_sg_id
+  app_sg_id                      = module.security_groups.app_sg_id
+  app_instance_profile_name      = module.iam.app_instance_profile_name
+  logs_kms_key_arn               = module.kms.logs_kms_key_arn
+  central_logs_bucket            = module.logging.central_logs_bucket
+  enable_alb_access_logs         = var.enable_alb_access_logs
+  alb_certificate_arn            = var.acm_certificate_arn != "" ? var.acm_certificate_arn : var.alb_certificate_arn
+  enable_https_listener          = var.enable_https_listener
+  enable_http_redirect           = var.enable_http_redirect
+  enable_cloudfront_origin_https = var.enable_cloudfront_origin_https
+  cloudfront_aliases             = var.cloudfront_aliases
+  cloudfront_acm_certificate_arn = var.cloudfront_acm_certificate_arn
+  cloudfront_origin_domain_name  = var.cloudfront_origin_domain_name
+  app_instance_type              = var.app_instance_type
+  app_desired_capacity           = var.app_desired_capacity
+  app_min_size                   = var.app_min_size
+  app_max_size                   = var.app_max_size
+  cognito_user_pool_id           = module.auth.cognito_user_pool_id
+  cognito_web_client_id          = module.auth.cognito_web_client_id
+  cognito_hosted_ui_base_url     = module.auth.cognito_hosted_ui_base_url
+  app_base_url                   = var.app_base_url
+  rds_endpoint                   = module.data.rds_endpoint
+  rds_master_secret_arn          = module.data.rds_master_secret_arn
+  rds_sslmode                    = var.rds_sslmode
+  app_artifact_bucket            = "${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}"
+  app_artifact_key               = "tmp/server.py"
 
   depends_on = [module.logging, module.data]
 }
@@ -108,8 +123,10 @@ module "auth" {
 module "waf" {
   source = "./modules/waf"
 
-  name_prefix = local.name_prefix
-  alb_arn     = module.app.alb_arn
+  name_prefix          = local.name_prefix
+  alb_arn              = module.app.alb_arn
+  waf_rate_rule_action = var.waf_rate_rule_action
+  waf_rate_limits      = var.waf_rate_limits
 }
 
 module "backup" {

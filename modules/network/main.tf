@@ -126,6 +126,10 @@ resource "aws_vpc_endpoint" "s3" {
   service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = concat([aws_route_table.public.id, aws_route_table.db.id], [for rt in aws_route_table.app : rt.id])
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = local.s3_gateway_endpoint_policy_statements
+  })
 
   tags = { Name = "${var.name_prefix}-s3-gateway-endpoint" }
 }

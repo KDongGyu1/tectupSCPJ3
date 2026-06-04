@@ -4,3 +4,4 @@ variable "az_names" { type = list(string) }
 variable "public_subnet_cidrs" { type = list(string) }
 variable "app_subnet_cidrs" { type = list(string) }
 variable "db_subnet_cidrs" { type = list(string) }
+variable "s3_gateway_endpoint_bucket_arns" { type = list(string) }

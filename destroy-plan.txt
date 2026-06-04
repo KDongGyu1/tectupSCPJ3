@@ -1,0 +1,1879 @@
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  - destroy
+
+Terraform will perform the following actions:
+
+  # module.app.aws_cloudfront_distribution.app will be destroyed
+  - resource "aws_cloudfront_distribution" "app" {
+      - aliases                         = [] -> null
+      - arn                             = "arn:aws:cloudfront::233338945536:distribution/E2V5455X4MM78W" -> null
+      - caller_reference                = "terraform-20260527061920964100000015" -> null
+      - comment                         = "finpay-dev application HTTPS entry point" -> null
+      - domain_name                     = "dzhg4wi4coxcz.cloudfront.net" -> null
+      - enabled                         = true -> null
+      - etag                            = "E23ZP02F085DFQ" -> null
+      - hosted_zone_id                  = "Z2FDTNDATAQYW2" -> null
+      - http_version                    = "http2" -> null
+      - id                              = "E2V5455X4MM78W" -> null
+      - in_progress_validation_batches  = 0 -> null
+      - is_ipv6_enabled                 = true -> null
+      - last_modified_time              = "2026-05-27 06:19:21.77 +0000 UTC" -> null
+      - price_class                     = "PriceClass_200" -> null
+      - retain_on_delete                = false -> null
+      - staging                         = false -> null
+      - status                          = "Deployed" -> null
+      - tags                            = {} -> null
+      - tags_all                        = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - trusted_key_groups              = [
+          - {
+              - enabled = false
+              - items   = []
+            },
+        ] -> null
+      - trusted_signers                 = [
+          - {
+              - enabled = false
+              - items   = []
+            },
+        ] -> null
+      - wait_for_deployment             = true -> null
+        # (3 unchanged attributes hidden)
+
+      - default_cache_behavior {
+          - allowed_methods            = [
+              - "DELETE",
+              - "GET",
+              - "HEAD",
+              - "OPTIONS",
+              - "PATCH",
+              - "POST",
+              - "PUT",
+            ] -> null
+          - cached_methods             = [
+              - "GET",
+              - "HEAD",
+            ] -> null
+          - compress                   = true -> null
+          - default_ttl                = 0 -> null
+          - max_ttl                    = 0 -> null
+          - min_ttl                    = 0 -> null
+          - smooth_streaming           = false -> null
+          - target_origin_id           = "finpay-dev-alb-origin" -> null
+          - trusted_key_groups         = [] -> null
+          - trusted_signers            = [] -> null
+          - viewer_protocol_policy     = "redirect-to-https" -> null
+            # (5 unchanged attributes hidden)
+
+          - forwarded_values {
+              - headers                 = [] -> null
+              - query_string            = true -> null
+              - query_string_cache_keys = [] -> null
+
+              - cookies {
+                  - forward           = "all" -> null
+                  - whitelisted_names = [] -> null
+                }
+            }
+
+          - grpc_config {
+              - enabled = false -> null
+            }
+        }
+
+      - origin {
+          - connection_attempts      = 3 -> null
+          - connection_timeout       = 10 -> null
+          - domain_name              = "finpay-dev-alb-2007566830.ap-northeast-2.elb.amazonaws.com" -> null
+          - origin_id                = "finpay-dev-alb-origin" -> null
+            # (2 unchanged attributes hidden)
+
+          - custom_origin_config {
+              - http_port                = 80 -> null
+              - https_port               = 443 -> null
+              - origin_keepalive_timeout = 5 -> null
+              - origin_protocol_policy   = "http-only" -> null
+              - origin_read_timeout      = 30 -> null
+              - origin_ssl_protocols     = [
+                  - "TLSv1.2",
+                ] -> null
+            }
+        }
+
+      - restrictions {
+          - geo_restriction {
+              - locations        = [] -> null
+              - restriction_type = "none" -> null
+            }
+        }
+
+      - viewer_certificate {
+          - cloudfront_default_certificate = true -> null
+          - minimum_protocol_version       = "TLSv1" -> null
+            # (3 unchanged attributes hidden)
+        }
+    }
+
+  # module.app.aws_launch_template.app["auth"] will be destroyed
+  - resource "aws_launch_template" "app" {
+      - arn                                  = "arn:aws:ec2:ap-northeast-2:233338945536:launch-template/lt-004ea09e05c248919" -> null
+      - default_version                      = 1 -> null
+      - disable_api_stop                     = false -> null
+      - disable_api_termination              = false -> null
+      - id                                   = "lt-004ea09e05c248919" -> null
+      - image_id                             = "ami-0336244c75907197e" -> null
+      - instance_type                        = "t3.micro" -> null
+      - latest_version                       = 1 -> null
+      - name                                 = "finpay-dev-auth-20260527062244447200000017" -> null
+      - name_prefix                          = "finpay-dev-auth-" -> null
+      - security_group_names                 = [] -> null
+      - tags                                 = {} -> null
+      - tags_all                             = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - user_data                            = (sensitive value) -> null
+      - vpc_security_group_ids               = [
+          - "sg-013bc5a12671e0b35",
+        ] -> null
+        # (6 unchanged attributes hidden)
+
+      - iam_instance_profile {
+          - name = "finpay-dev-app-instance-profile" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - metadata_options {
+          - http_endpoint               = "enabled" -> null
+          - http_put_response_hop_limit = 1 -> null
+          - http_tokens                 = "required" -> null
+            # (2 unchanged attributes hidden)
+        }
+
+      - tag_specifications {
+          - resource_type = "instance" -> null
+          - tags          = {
+              - "Name"    = "finpay-dev-auth"
+              - "Service" = "auth-user-api"
+            } -> null
+        }
+    }
+
+  # module.app.aws_launch_template.app["ops"] will be destroyed
+  - resource "aws_launch_template" "app" {
+      - arn                                  = "arn:aws:ec2:ap-northeast-2:233338945536:launch-template/lt-0e3c03de94b4c5cfa" -> null
+      - default_version                      = 1 -> null
+      - disable_api_stop                     = false -> null
+      - disable_api_termination              = false -> null
+      - id                                   = "lt-0e3c03de94b4c5cfa" -> null
+      - image_id                             = "ami-0336244c75907197e" -> null
+      - instance_type                        = "t3.micro" -> null
+      - latest_version                       = 1 -> null
+      - name                                 = "finpay-dev-ops-20260527062244447200000016" -> null
+      - name_prefix                          = "finpay-dev-ops-" -> null
+      - security_group_names                 = [] -> null
+      - tags                                 = {} -> null
+      - tags_all                             = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - user_data                            = (sensitive value) -> null
+      - vpc_security_group_ids               = [
+          - "sg-013bc5a12671e0b35",
+        ] -> null
+        # (6 unchanged attributes hidden)
+
+      - iam_instance_profile {
+          - name = "finpay-dev-app-instance-profile" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - metadata_options {
+          - http_endpoint               = "enabled" -> null
+          - http_put_response_hop_limit = 1 -> null
+          - http_tokens                 = "required" -> null
+            # (2 unchanged attributes hidden)
+        }
+
+      - tag_specifications {
+          - resource_type = "instance" -> null
+          - tags          = {
+              - "Name"    = "finpay-dev-ops"
+              - "Service" = "ops-audit-api"
+            } -> null
+        }
+    }
+
+  # module.app.aws_launch_template.app["payment"] will be destroyed
+  - resource "aws_launch_template" "app" {
+      - arn                                  = "arn:aws:ec2:ap-northeast-2:233338945536:launch-template/lt-0b4b1b0011ec90f06" -> null
+      - default_version                      = 1 -> null
+      - disable_api_stop                     = false -> null
+      - disable_api_termination              = false -> null
+      - id                                   = "lt-0b4b1b0011ec90f06" -> null
+      - image_id                             = "ami-0336244c75907197e" -> null
+      - instance_type                        = "t3.micro" -> null
+      - latest_version                       = 1 -> null
+      - name                                 = "finpay-dev-payment-2026052706224444720000001a" -> null
+      - name_prefix                          = "finpay-dev-payment-" -> null
+      - security_group_names                 = [] -> null
+      - tags                                 = {} -> null
+      - tags_all                             = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - user_data                            = (sensitive value) -> null
+      - vpc_security_group_ids               = [
+          - "sg-013bc5a12671e0b35",
+        ] -> null
+        # (6 unchanged attributes hidden)
+
+      - iam_instance_profile {
+          - name = "finpay-dev-app-instance-profile" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - metadata_options {
+          - http_endpoint               = "enabled" -> null
+          - http_put_response_hop_limit = 1 -> null
+          - http_tokens                 = "required" -> null
+            # (2 unchanged attributes hidden)
+        }
+
+      - tag_specifications {
+          - resource_type = "instance" -> null
+          - tags          = {
+              - "Name"    = "finpay-dev-payment"
+              - "Service" = "payment-api"
+            } -> null
+        }
+    }
+
+  # module.app.aws_lb.app will be destroyed
+  - resource "aws_lb" "app" {
+      - arn                                                          = "arn:aws:elasticloadbalancing:ap-northeast-2:233338945536:loadbalancer/app/finpay-dev-alb/d7f630390abc9eb1" -> null
+      - arn_suffix                                                   = "app/finpay-dev-alb/d7f630390abc9eb1" -> null
+      - client_keep_alive                                            = 3600 -> null
+      - desync_mitigation_mode                                       = "defensive" -> null
+      - dns_name                                                     = "finpay-dev-alb-2007566830.ap-northeast-2.elb.amazonaws.com" -> null
+      - drop_invalid_header_fields                                   = true -> null
+      - enable_cross_zone_load_balancing                             = true -> null
+      - enable_deletion_protection                                   = false -> null
+      - enable_http2                                                 = true -> null
+      - enable_tls_version_and_cipher_suite_headers                  = false -> null
+      - enable_waf_fail_open                                         = false -> null
+      - enable_xff_client_port                                       = false -> null
+      - enable_zonal_shift                                           = false -> null
+      - id                                                           = "arn:aws:elasticloadbalancing:ap-northeast-2:233338945536:loadbalancer/app/finpay-dev-alb/d7f630390abc9eb1" -> null
+      - idle_timeout                                                 = 60 -> null
+      - internal                                                     = false -> null
+      - ip_address_type                                              = "ipv4" -> null
+      - load_balancer_type                                           = "application" -> null
+      - name                                                         = "finpay-dev-alb" -> null
+      - preserve_host_header                                         = false -> null
+      - security_groups                                              = [
+          - "sg-0f619c05fa2ae9a31",
+        ] -> null
+      - subnets                                                      = [
+          - "subnet-0163b9a867fdcc069",
+          - "subnet-04b54332aaea98f2a",
+        ] -> null
+      - tags                                                         = {} -> null
+      - tags_all                                                     = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - vpc_id                                                       = "vpc-02635aede3e996576" -> null
+      - xff_header_processing_mode                                   = "append" -> null
+      - zone_id                                                      = "ZWKZPGTI48KDX" -> null
+        # (3 unchanged attributes hidden)
+
+      - access_logs {
+          - enabled = false -> null
+            # (2 unchanged attributes hidden)
+        }
+
+      - connection_logs {
+          - enabled = false -> null
+            # (2 unchanged attributes hidden)
+        }
+
+      - subnet_mapping {
+          - subnet_id            = "subnet-0163b9a867fdcc069" -> null
+            # (4 unchanged attributes hidden)
+        }
+      - subnet_mapping {
+          - subnet_id            = "subnet-04b54332aaea98f2a" -> null
+            # (4 unchanged attributes hidden)
+        }
+    }
+
+  # module.app.aws_lb_target_group.app["auth"] will be destroyed
+  - resource "aws_lb_target_group" "app" {
+      - arn                                = "arn:aws:elasticloadbalancing:ap-northeast-2:233338945536:targetgroup/finpay-dev-auth-tg/a7f9776f1c5e5ccb" -> null
+      - arn_suffix                         = "targetgroup/finpay-dev-auth-tg/a7f9776f1c5e5ccb" -> null
+      - deregistration_delay               = "300" -> null
+      - id                                 = "arn:aws:elasticloadbalancing:ap-northeast-2:233338945536:targetgroup/finpay-dev-auth-tg/a7f9776f1c5e5ccb" -> null
+      - ip_address_type                    = "ipv4" -> null
+      - lambda_multi_value_headers_enabled = false -> null
+      - load_balancer_arns                 = [] -> null
+      - load_balancing_algorithm_type      = "round_robin" -> null
+      - load_balancing_anomaly_mitigation  = "off" -> null
+      - load_balancing_cross_zone_enabled  = "use_load_balancer_configuration" -> null
+      - name                               = "finpay-dev-auth-tg" -> null
+      - port                               = 8080 -> null
+      - protocol                           = "HTTP" -> null
+      - protocol_version                   = "HTTP1" -> null
+      - proxy_protocol_v2                  = false -> null
+      - slow_start                         = 0 -> null
+      - tags                               = {} -> null
+      - tags_all                           = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - target_type                        = "instance" -> null
+      - vpc_id                             = "vpc-02635aede3e996576" -> null
+        # (1 unchanged attribute hidden)
+
+      - health_check {
+          - enabled             = true -> null
+          - healthy_threshold   = 2 -> null
+          - interval            = 30 -> null
+          - matcher             = "200" -> null
+          - path                = "/health" -> null
+          - port                = "traffic-port" -> null
+          - protocol            = "HTTP" -> null
+          - timeout             = 5 -> null
+          - unhealthy_threshold = 3 -> null
+        }
+
+      - stickiness {
+          - cookie_duration = 86400 -> null
+          - enabled         = false -> null
+          - type            = "lb_cookie" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - target_failover {}
+
+      - target_group_health {
+          - dns_failover {
+              - minimum_healthy_targets_count      = "1" -> null
+              - minimum_healthy_targets_percentage = "off" -> null
+            }
+          - unhealthy_state_routing {
+              - minimum_healthy_targets_count      = 1 -> null
+              - minimum_healthy_targets_percentage = "off" -> null
+            }
+        }
+
+      - target_health_state {}
+    }
+
+  # module.app.aws_lb_target_group.app["ops"] will be destroyed
+  - resource "aws_lb_target_group" "app" {
+      - arn                                = "arn:aws:elasticloadbalancing:ap-northeast-2:233338945536:targetgroup/finpay-dev-ops-tg/4d869c8c360532e8" -> null
+      - arn_suffix                         = "targetgroup/finpay-dev-ops-tg/4d869c8c360532e8" -> null
+      - deregistration_delay               = "300" -> null
+      - id                                 = "arn:aws:elasticloadbalancing:ap-northeast-2:233338945536:targetgroup/finpay-dev-ops-tg/4d869c8c360532e8" -> null
+      - ip_address_type                    = "ipv4" -> null
+      - lambda_multi_value_headers_enabled = false -> null
+      - load_balancer_arns                 = [] -> null
+      - load_balancing_algorithm_type      = "round_robin" -> null
+      - load_balancing_anomaly_mitigation  = "off" -> null
+      - load_balancing_cross_zone_enabled  = "use_load_balancer_configuration" -> null
+      - name                               = "finpay-dev-ops-tg" -> null
+      - port                               = 8080 -> null
+      - protocol                           = "HTTP" -> null
+      - protocol_version                   = "HTTP1" -> null
+      - proxy_protocol_v2                  = false -> null
+      - slow_start                         = 0 -> null
+      - tags                               = {} -> null
+      - tags_all                           = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - target_type                        = "instance" -> null
+      - vpc_id                             = "vpc-02635aede3e996576" -> null
+        # (1 unchanged attribute hidden)
+
+      - health_check {
+          - enabled             = true -> null
+          - healthy_threshold   = 2 -> null
+          - interval            = 30 -> null
+          - matcher             = "200" -> null
+          - path                = "/health" -> null
+          - port                = "traffic-port" -> null
+          - protocol            = "HTTP" -> null
+          - timeout             = 5 -> null
+          - unhealthy_threshold = 3 -> null
+        }
+
+      - stickiness {
+          - cookie_duration = 86400 -> null
+          - enabled         = false -> null
+          - type            = "lb_cookie" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - target_failover {}
+
+      - target_group_health {
+          - dns_failover {
+              - minimum_healthy_targets_count      = "1" -> null
+              - minimum_healthy_targets_percentage = "off" -> null
+            }
+          - unhealthy_state_routing {
+              - minimum_healthy_targets_count      = 1 -> null
+              - minimum_healthy_targets_percentage = "off" -> null
+            }
+        }
+
+      - target_health_state {}
+    }
+
+  # module.app.aws_lb_target_group.app["payment"] will be destroyed
+  - resource "aws_lb_target_group" "app" {
+      - arn                                = "arn:aws:elasticloadbalancing:ap-northeast-2:233338945536:targetgroup/finpay-dev-payment-tg/b5bee05abf7dbaed" -> null
+      - arn_suffix                         = "targetgroup/finpay-dev-payment-tg/b5bee05abf7dbaed" -> null
+      - deregistration_delay               = "300" -> null
+      - id                                 = "arn:aws:elasticloadbalancing:ap-northeast-2:233338945536:targetgroup/finpay-dev-payment-tg/b5bee05abf7dbaed" -> null
+      - ip_address_type                    = "ipv4" -> null
+      - lambda_multi_value_headers_enabled = false -> null
+      - load_balancer_arns                 = [] -> null
+      - load_balancing_algorithm_type      = "round_robin" -> null
+      - load_balancing_anomaly_mitigation  = "off" -> null
+      - load_balancing_cross_zone_enabled  = "use_load_balancer_configuration" -> null
+      - name                               = "finpay-dev-payment-tg" -> null
+      - port                               = 8080 -> null
+      - protocol                           = "HTTP" -> null
+      - protocol_version                   = "HTTP1" -> null
+      - proxy_protocol_v2                  = false -> null
+      - slow_start                         = 0 -> null
+      - tags                               = {} -> null
+      - tags_all                           = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - target_type                        = "instance" -> null
+      - vpc_id                             = "vpc-02635aede3e996576" -> null
+        # (1 unchanged attribute hidden)
+
+      - health_check {
+          - enabled             = true -> null
+          - healthy_threshold   = 2 -> null
+          - interval            = 30 -> null
+          - matcher             = "200" -> null
+          - path                = "/health" -> null
+          - port                = "traffic-port" -> null
+          - protocol            = "HTTP" -> null
+          - timeout             = 5 -> null
+          - unhealthy_threshold = 3 -> null
+        }
+
+      - stickiness {
+          - cookie_duration = 86400 -> null
+          - enabled         = false -> null
+          - type            = "lb_cookie" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - target_failover {}
+
+      - target_group_health {
+          - dns_failover {
+              - minimum_healthy_targets_count      = "1" -> null
+              - minimum_healthy_targets_percentage = "off" -> null
+            }
+          - unhealthy_state_routing {
+              - minimum_healthy_targets_count      = 1 -> null
+              - minimum_healthy_targets_percentage = "off" -> null
+            }
+        }
+
+      - target_health_state {}
+    }
+
+  # module.auth.aws_cognito_user_pool.main will be destroyed
+  - resource "aws_cognito_user_pool" "main" {
+      - arn                        = "arn:aws:cognito-idp:ap-northeast-2:233338945536:userpool/ap-northeast-2_oEW7fgEsh" -> null
+      - auto_verified_attributes   = [] -> null
+      - creation_date              = "2026-05-27T06:01:12Z" -> null
+      - deletion_protection        = "INACTIVE" -> null
+      - domain                     = "finpay-dev-233338945536" -> null
+      - endpoint                   = "cognito-idp.ap-northeast-2.amazonaws.com/ap-northeast-2_oEW7fgEsh" -> null
+      - estimated_number_of_users  = 0 -> null
+      - id                         = "ap-northeast-2_oEW7fgEsh" -> null
+      - last_modified_date         = "2026-05-27T06:01:12Z" -> null
+      - mfa_configuration          = "OPTIONAL" -> null
+      - name                       = "finpay-dev-app-users" -> null
+      - tags                       = {} -> null
+      - tags_all                   = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - user_pool_tier             = "PLUS" -> null
+      - username_attributes        = [] -> null
+        # (5 unchanged attributes hidden)
+
+      - account_recovery_setting {
+          - recovery_mechanism {
+              - name     = "verified_email" -> null
+              - priority = 1 -> null
+            }
+          - recovery_mechanism {
+              - name     = "verified_phone_number" -> null
+              - priority = 2 -> null
+            }
+        }
+
+      - admin_create_user_config {
+          - allow_admin_create_user_only = true -> null
+        }
+
+      - email_configuration {
+          - email_sending_account  = "COGNITO_DEFAULT" -> null
+            # (4 unchanged attributes hidden)
+        }
+
+      - password_policy {
+          - minimum_length                   = 12 -> null
+          - password_history_size            = 0 -> null
+          - require_lowercase                = true -> null
+          - require_numbers                  = true -> null
+          - require_symbols                  = true -> null
+          - require_uppercase                = true -> null
+          - temporary_password_validity_days = 7 -> null
+        }
+
+      - schema {
+          - attribute_data_type      = "String" -> null
+          - developer_only_attribute = false -> null
+          - mutable                  = true -> null
+          - name                     = "merchant_id" -> null
+          - required                 = false -> null
+
+          - string_attribute_constraints {
+              - max_length = "64" -> null
+              - min_length = "1" -> null
+            }
+        }
+      - schema {
+          - attribute_data_type      = "String" -> null
+          - developer_only_attribute = false -> null
+          - mutable                  = true -> null
+          - name                     = "role" -> null
+          - required                 = false -> null
+
+          - string_attribute_constraints {
+              - max_length = "64" -> null
+              - min_length = "1" -> null
+            }
+        }
+
+      - sign_in_policy {
+          - allowed_first_auth_factors = [
+              - "PASSWORD",
+            ] -> null
+        }
+
+      - software_token_mfa_configuration {
+          - enabled = true -> null
+        }
+
+      - user_pool_add_ons {
+          - advanced_security_mode = "ENFORCED" -> null
+
+          - advanced_security_additional_flows {
+              - custom_auth_mode = "AUDIT" -> null
+            }
+        }
+
+      - verification_message_template {
+          - default_email_option  = "CONFIRM_WITH_CODE" -> null
+            # (5 unchanged attributes hidden)
+        }
+    }
+
+  # module.auth.aws_cognito_user_pool_client.web will be destroyed
+  - resource "aws_cognito_user_pool_client" "web" {
+      - access_token_validity                         = 0 -> null
+      - allowed_oauth_flows                           = [
+          - "code",
+        ] -> null
+      - allowed_oauth_flows_user_pool_client          = true -> null
+      - allowed_oauth_scopes                          = [
+          - "email",
+          - "openid",
+          - "profile",
+        ] -> null
+      - auth_session_validity                         = 3 -> null
+      - callback_urls                                 = [
+          - "http://localhost:8088/auth/callback",
+          - "https://dzhg4wi4coxcz.cloudfront.net/auth/callback",
+        ] -> null
+      - enable_propagate_additional_user_context_data = false -> null
+      - enable_token_revocation                       = true -> null
+      - explicit_auth_flows                           = [
+          - "ALLOW_REFRESH_TOKEN_AUTH",
+          - "ALLOW_USER_PASSWORD_AUTH",
+          - "ALLOW_USER_SRP_AUTH",
+        ] -> null
+      - generate_secret                               = false -> null
+      - id                                            = "7t50gvqnp2nlkcckdfnbgd2qsv" -> null
+      - id_token_validity                             = 0 -> null
+      - logout_urls                                   = [
+          - "http://localhost:8088/login",
+          - "https://dzhg4wi4coxcz.cloudfront.net/login",
+        ] -> null
+      - name                                          = "finpay-dev-web-client" -> null
+      - prevent_user_existence_errors                 = "ENABLED" -> null
+      - read_attributes                               = [] -> null
+      - refresh_token_validity                        = 30 -> null
+      - supported_identity_providers                  = [
+          - "COGNITO",
+        ] -> null
+      - user_pool_id                                  = "ap-northeast-2_oEW7fgEsh" -> null
+      - write_attributes                              = [] -> null
+        # (2 unchanged attributes hidden)
+    }
+
+  # module.auth.aws_cognito_user_pool_domain.main will be destroyed
+  - resource "aws_cognito_user_pool_domain" "main" {
+      - aws_account_id                  = "233338945536" -> null
+      - cloudfront_distribution         = "d2gcbvkpcschxy.cloudfront.net" -> null
+      - cloudfront_distribution_arn     = "d2gcbvkpcschxy.cloudfront.net" -> null
+      - cloudfront_distribution_zone_id = "Z2FDTNDATAQYW2" -> null
+      - domain                          = "finpay-dev-233338945536" -> null
+      - id                              = "finpay-dev-233338945536" -> null
+      - managed_login_version           = 1 -> null
+      - s3_bucket                       = "aws-cognito-prod-icn-assets" -> null
+      - user_pool_id                    = "ap-northeast-2_oEW7fgEsh" -> null
+      - version                         = "20260527060114" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.data.aws_db_instance.postgres will be destroyed
+  - resource "aws_db_instance" "postgres" {
+      - address                               = "finpay-dev-postgres.cl2ka6y6864c.ap-northeast-2.rds.amazonaws.com" -> null
+      - allocated_storage                     = 20 -> null
+      - apply_immediately                     = false -> null
+      - arn                                   = "arn:aws:rds:ap-northeast-2:233338945536:db:finpay-dev-postgres" -> null
+      - auto_minor_version_upgrade            = true -> null
+      - availability_zone                     = "ap-northeast-2c" -> null
+      - backup_retention_period               = 1 -> null
+      - backup_target                         = "region" -> null
+      - backup_window                         = "14:40-15:10" -> null
+      - ca_cert_identifier                    = "rds-ca-rsa2048-g1" -> null
+      - copy_tags_to_snapshot                 = false -> null
+      - customer_owned_ip_enabled             = false -> null
+      - database_insights_mode                = "standard" -> null
+      - db_name                               = "finpay" -> null
+      - db_subnet_group_name                  = "finpay-dev-db-subnet-group" -> null
+      - dedicated_log_volume                  = false -> null
+      - delete_automated_backups              = true -> null
+      - deletion_protection                   = false -> null
+      - domain_dns_ips                        = [] -> null
+      - enabled_cloudwatch_logs_exports       = [
+          - "postgresql",
+          - "upgrade",
+        ] -> null
+      - endpoint                              = "finpay-dev-postgres.cl2ka6y6864c.ap-northeast-2.rds.amazonaws.com:5432" -> null
+      - engine                                = "postgres" -> null
+      - engine_lifecycle_support              = "open-source-rds-extended-support" -> null
+      - engine_version                        = "18.3" -> null
+      - engine_version_actual                 = "18.3" -> null
+      - hosted_zone_id                        = "ZLA2NUCOLGUUR" -> null
+      - iam_database_authentication_enabled   = true -> null
+      - id                                    = "db-4ZGYM6LNJGY6WR6NK3RUFIXV5Q" -> null
+      - identifier                            = "finpay-dev-postgres" -> null
+      - instance_class                        = "db.t4g.micro" -> null
+      - iops                                  = 0 -> null
+      - kms_key_id                            = "arn:aws:kms:ap-northeast-2:233338945536:key/70d750b1-4e35-4ba7-a155-1865df80dec7" -> null
+      - latest_restorable_time                = "2026-05-29T09:15:32Z" -> null
+      - license_model                         = "postgresql-license" -> null
+      - listener_endpoint                     = [] -> null
+      - maintenance_window                    = "mon:18:28-mon:18:58" -> null
+      - manage_master_user_password           = true -> null
+      - master_user_secret                    = [
+          - {
+              - kms_key_id    = "arn:aws:kms:ap-northeast-2:233338945536:key/70d750b1-4e35-4ba7-a155-1865df80dec7"
+              - secret_arn    = "arn:aws:secretsmanager:ap-northeast-2:233338945536:secret:rds!db-285e5b83-5c93-40fe-b09d-5661e158cd8e-ePUQqV"
+              - secret_status = "active"
+            },
+        ] -> null
+      - master_user_secret_kms_key_id         = "arn:aws:kms:ap-northeast-2:233338945536:key/70d750b1-4e35-4ba7-a155-1865df80dec7" -> null
+      - max_allocated_storage                 = 100 -> null
+      - monitoring_interval                   = 0 -> null
+      - multi_az                              = true -> null
+      - network_type                          = "IPV4" -> null
+      - option_group_name                     = "default:postgres-18" -> null
+      - parameter_group_name                  = "default.postgres18" -> null
+      - password_wo                           = (write-only attribute) -> null
+      - performance_insights_enabled          = true -> null
+      - performance_insights_kms_key_id       = "arn:aws:kms:ap-northeast-2:233338945536:key/70d750b1-4e35-4ba7-a155-1865df80dec7" -> null
+      - performance_insights_retention_period = 7 -> null
+      - port                                  = 5432 -> null
+      - publicly_accessible                   = false -> null
+      - replicas                              = [] -> null
+      - resource_id                           = "db-4ZGYM6LNJGY6WR6NK3RUFIXV5Q" -> null
+      - skip_final_snapshot                   = true -> null
+      - status                                = "available" -> null
+      - storage_encrypted                     = true -> null
+      - storage_throughput                    = 0 -> null
+      - storage_type                          = "gp2" -> null
+      - tags                                  = {} -> null
+      - tags_all                              = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - username                              = "finpay_admin" -> null
+      - vpc_security_group_ids                = [
+          - "sg-01747160c6edee365",
+        ] -> null
+        # (13 unchanged attributes hidden)
+    }
+
+  # module.data.aws_db_subnet_group.main will be destroyed
+  - resource "aws_db_subnet_group" "main" {
+      - arn                     = "arn:aws:rds:ap-northeast-2:233338945536:subgrp:finpay-dev-db-subnet-group" -> null
+      - description             = "Managed by Terraform" -> null
+      - id                      = "finpay-dev-db-subnet-group" -> null
+      - name                    = "finpay-dev-db-subnet-group" -> null
+      - subnet_ids              = [
+          - "subnet-02a1fe7a57fcdc89c",
+          - "subnet-082e2de795e7807ad",
+        ] -> null
+      - supported_network_types = [
+          - "IPV4",
+        ] -> null
+      - tags                    = {} -> null
+      - tags_all                = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - vpc_id                  = "vpc-02635aede3e996576" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.iam.aws_iam_instance_profile.app will be destroyed
+  - resource "aws_iam_instance_profile" "app" {
+      - arn         = "arn:aws:iam::233338945536:instance-profile/finpay-dev-app-instance-profile" -> null
+      - create_date = "2026-05-27T06:01:13Z" -> null
+      - id          = "finpay-dev-app-instance-profile" -> null
+      - name        = "finpay-dev-app-instance-profile" -> null
+      - path        = "/" -> null
+      - role        = "finpay-dev-app-instance-role" -> null
+      - tags        = {} -> null
+      - tags_all    = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - unique_id   = "AIPATMVAVYAACYYMYTMMA" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.iam.aws_iam_role.app_instance will be destroyed
+  - resource "aws_iam_role" "app_instance" {
+      - arn                   = "arn:aws:iam::233338945536:role/finpay-dev-app-instance-role" -> null
+      - assume_role_policy    = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "sts:AssumeRole"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "ec2.amazonaws.com"
+                        }
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - create_date           = "2026-05-27T06:01:11Z" -> null
+      - force_detach_policies = false -> null
+      - id                    = "finpay-dev-app-instance-role" -> null
+      - managed_policy_arns   = [] -> null
+      - max_session_duration  = 3600 -> null
+      - name                  = "finpay-dev-app-instance-role" -> null
+      - path                  = "/" -> null
+      - tags                  = {} -> null
+      - tags_all              = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - unique_id             = "AROATMVAVYAACHNJ4VRRD" -> null
+        # (3 unchanged attributes hidden)
+    }
+
+  # module.kms.aws_kms_key.logs will be destroyed
+  - resource "aws_kms_key" "logs" {
+      - arn                                = "arn:aws:kms:ap-northeast-2:233338945536:key/09ac44ec-7cc8-4f9c-97e2-5b8f4f23a0bd" -> null
+      - bypass_policy_lockout_safety_check = false -> null
+      - customer_master_key_spec           = "SYMMETRIC_DEFAULT" -> null
+      - deletion_window_in_days            = 30 -> null
+      - description                        = "finpay-dev log and audit encryption key" -> null
+      - enable_key_rotation                = true -> null
+      - id                                 = "09ac44ec-7cc8-4f9c-97e2-5b8f4f23a0bd" -> null
+      - is_enabled                         = true -> null
+      - key_id                             = "09ac44ec-7cc8-4f9c-97e2-5b8f4f23a0bd" -> null
+      - key_usage                          = "ENCRYPT_DECRYPT" -> null
+      - multi_region                       = false -> null
+      - policy                             = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "kms:*"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - AWS = "arn:aws:iam::233338945536:root"
+                        }
+                      - Resource  = "*"
+                      - Sid       = "EnableAccountAdministration"
+                    },
+                  - {
+                      - Action    = [
+                          - "kms:ReEncrypt*",
+                          - "kms:GenerateDataKey*",
+                          - "kms:Encrypt",
+                          - "kms:DescribeKey",
+                          - "kms:Decrypt",
+                        ]
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = [
+                              - "sns.amazonaws.com",
+                              - "s3.amazonaws.com",
+                              - "logs.ap-northeast-2.amazonaws.com",
+                              - "events.amazonaws.com",
+                              - "delivery.logs.amazonaws.com",
+                              - "config.amazonaws.com",
+                              - "cloudwatch.amazonaws.com",
+                              - "cloudtrail.amazonaws.com",
+                            ]
+                        }
+                      - Resource  = "*"
+                      - Sid       = "AllowLoggingServices"
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - rotation_period_in_days            = 365 -> null
+      - tags                               = {} -> null
+      - tags_all                           = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+        # (2 unchanged attributes hidden)
+    }
+
+  # module.kms.aws_kms_key.main will be destroyed
+  - resource "aws_kms_key" "main" {
+      - arn                                = "arn:aws:kms:ap-northeast-2:233338945536:key/70d750b1-4e35-4ba7-a155-1865df80dec7" -> null
+      - bypass_policy_lockout_safety_check = false -> null
+      - customer_master_key_spec           = "SYMMETRIC_DEFAULT" -> null
+      - deletion_window_in_days            = 30 -> null
+      - description                        = "finpay-dev main encryption key" -> null
+      - enable_key_rotation                = true -> null
+      - id                                 = "70d750b1-4e35-4ba7-a155-1865df80dec7" -> null
+      - is_enabled                         = true -> null
+      - key_id                             = "70d750b1-4e35-4ba7-a155-1865df80dec7" -> null
+      - key_usage                          = "ENCRYPT_DECRYPT" -> null
+      - multi_region                       = false -> null
+      - policy                             = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "kms:*"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - AWS = "arn:aws:iam::233338945536:root"
+                        }
+                      - Resource  = "*"
+                      - Sid       = "EnableAccountAdministration"
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - rotation_period_in_days            = 365 -> null
+      - tags                               = {} -> null
+      - tags_all                           = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+        # (2 unchanged attributes hidden)
+    }
+
+  # module.logging.aws_cloudtrail.main will be destroyed
+  - resource "aws_cloudtrail" "main" {
+      - arn                           = "arn:aws:cloudtrail:ap-northeast-2:233338945536:trail/finpay-dev-trail" -> null
+      - cloud_watch_logs_group_arn    = "arn:aws:logs:ap-northeast-2:233338945536:log-group:/aws/cloudtrail/finpay-dev:*" -> null
+      - cloud_watch_logs_role_arn     = "arn:aws:iam::233338945536:role/finpay-dev-cloudtrail-logs-role" -> null
+      - enable_log_file_validation    = true -> null
+      - enable_logging                = true -> null
+      - home_region                   = "ap-northeast-2" -> null
+      - id                            = "arn:aws:cloudtrail:ap-northeast-2:233338945536:trail/finpay-dev-trail" -> null
+      - include_global_service_events = true -> null
+      - is_multi_region_trail         = true -> null
+      - is_organization_trail         = false -> null
+      - kms_key_id                    = "arn:aws:kms:ap-northeast-2:233338945536:key/09ac44ec-7cc8-4f9c-97e2-5b8f4f23a0bd" -> null
+      - name                          = "finpay-dev-trail" -> null
+      - s3_bucket_name                = "finpay-dev-logs-233338945536" -> null
+      - tags                          = {} -> null
+      - tags_all                      = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+        # (3 unchanged attributes hidden)
+
+      - event_selector {
+          - exclude_management_event_sources = [] -> null
+          - include_management_events        = true -> null
+          - read_write_type                  = "All" -> null
+        }
+    }
+
+  # module.logging.aws_cloudwatch_log_group.cloudtrail will be destroyed
+  - resource "aws_cloudwatch_log_group" "cloudtrail" {
+      - arn               = "arn:aws:logs:ap-northeast-2:233338945536:log-group:/aws/cloudtrail/finpay-dev" -> null
+      - id                = "/aws/cloudtrail/finpay-dev" -> null
+      - kms_key_id        = "arn:aws:kms:ap-northeast-2:233338945536:key/09ac44ec-7cc8-4f9c-97e2-5b8f4f23a0bd" -> null
+      - log_group_class   = "STANDARD" -> null
+      - name              = "/aws/cloudtrail/finpay-dev" -> null
+      - retention_in_days = 365 -> null
+      - skip_destroy      = false -> null
+      - tags              = {} -> null
+      - tags_all          = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.logging.aws_cloudwatch_log_group.vpc_flow will be destroyed
+  - resource "aws_cloudwatch_log_group" "vpc_flow" {
+      - arn               = "arn:aws:logs:ap-northeast-2:233338945536:log-group:/aws/vpc/finpay-dev/flow-logs" -> null
+      - id                = "/aws/vpc/finpay-dev/flow-logs" -> null
+      - kms_key_id        = "arn:aws:kms:ap-northeast-2:233338945536:key/09ac44ec-7cc8-4f9c-97e2-5b8f4f23a0bd" -> null
+      - log_group_class   = "STANDARD" -> null
+      - name              = "/aws/vpc/finpay-dev/flow-logs" -> null
+      - retention_in_days = 365 -> null
+      - skip_destroy      = false -> null
+      - tags              = {} -> null
+      - tags_all          = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.logging.aws_flow_log.vpc will be destroyed
+  - resource "aws_flow_log" "vpc" {
+      - arn                        = "arn:aws:ec2:ap-northeast-2:233338945536:vpc-flow-log/fl-06f5450d3a3a19954" -> null
+      - iam_role_arn               = "arn:aws:iam::233338945536:role/finpay-dev-vpc-flow-logs-role" -> null
+      - id                         = "fl-06f5450d3a3a19954" -> null
+      - log_destination            = "arn:aws:logs:ap-northeast-2:233338945536:log-group:/aws/vpc/finpay-dev/flow-logs" -> null
+      - log_destination_type       = "cloud-watch-logs" -> null
+      - log_format                 = "${version} ${account-id} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${action} ${log-status}" -> null
+      - log_group_name             = "/aws/vpc/finpay-dev/flow-logs" -> null
+      - max_aggregation_interval   = 600 -> null
+      - tags                       = {} -> null
+      - tags_all                   = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - traffic_type               = "ALL" -> null
+      - vpc_id                     = "vpc-02635aede3e996576" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.logging.aws_iam_role.cloudtrail_logs will be destroyed
+  - resource "aws_iam_role" "cloudtrail_logs" {
+      - arn                   = "arn:aws:iam::233338945536:role/finpay-dev-cloudtrail-logs-role" -> null
+      - assume_role_policy    = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "sts:AssumeRole"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "cloudtrail.amazonaws.com"
+                        }
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - create_date           = "2026-05-27T06:01:10Z" -> null
+      - force_detach_policies = false -> null
+      - id                    = "finpay-dev-cloudtrail-logs-role" -> null
+      - managed_policy_arns   = [] -> null
+      - max_session_duration  = 3600 -> null
+      - name                  = "finpay-dev-cloudtrail-logs-role" -> null
+      - path                  = "/" -> null
+      - tags                  = {} -> null
+      - tags_all              = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - unique_id             = "AROATMVAVYAADUH2BQIHF" -> null
+        # (3 unchanged attributes hidden)
+
+      - inline_policy {
+          - name   = "finpay-dev-cloudtrail-logs-policy" -> null
+          - policy = jsonencode(
+                {
+                  - Statement = [
+                      - {
+                          - Action   = [
+                              - "logs:CreateLogStream",
+                              - "logs:PutLogEvents",
+                            ]
+                          - Effect   = "Allow"
+                          - Resource = "arn:aws:logs:ap-northeast-2:233338945536:log-group:/aws/cloudtrail/finpay-dev:*"
+                        },
+                    ]
+                  - Version   = "2012-10-17"
+                }
+            ) -> null
+        }
+    }
+
+  # module.logging.aws_iam_role.vpc_flow_logs will be destroyed
+  - resource "aws_iam_role" "vpc_flow_logs" {
+      - arn                   = "arn:aws:iam::233338945536:role/finpay-dev-vpc-flow-logs-role" -> null
+      - assume_role_policy    = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "sts:AssumeRole"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "vpc-flow-logs.amazonaws.com"
+                        }
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - create_date           = "2026-05-27T06:01:10Z" -> null
+      - force_detach_policies = false -> null
+      - id                    = "finpay-dev-vpc-flow-logs-role" -> null
+      - managed_policy_arns   = [] -> null
+      - max_session_duration  = 3600 -> null
+      - name                  = "finpay-dev-vpc-flow-logs-role" -> null
+      - path                  = "/" -> null
+      - tags                  = {} -> null
+      - tags_all              = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+      - unique_id             = "AROATMVAVYAALPR5NCFIH" -> null
+        # (3 unchanged attributes hidden)
+
+      - inline_policy {
+          - name   = "finpay-dev-vpc-flow-logs-policy" -> null
+          - policy = jsonencode(
+                {
+                  - Statement = [
+                      - {
+                          - Action   = [
+                              - "logs:CreateLogStream",
+                              - "logs:PutLogEvents",
+                              - "logs:DescribeLogGroups",
+                              - "logs:DescribeLogStreams",
+                            ]
+                          - Effect   = "Allow"
+                          - Resource = "*"
+                        },
+                    ]
+                  - Version   = "2012-10-17"
+                }
+            ) -> null
+        }
+    }
+
+  # module.logging.aws_iam_role_policy.cloudtrail_logs will be destroyed
+  - resource "aws_iam_role_policy" "cloudtrail_logs" {
+      - id          = "finpay-dev-cloudtrail-logs-role:finpay-dev-cloudtrail-logs-policy" -> null
+      - name        = "finpay-dev-cloudtrail-logs-policy" -> null
+      - policy      = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action   = [
+                          - "logs:CreateLogStream",
+                          - "logs:PutLogEvents",
+                        ]
+                      - Effect   = "Allow"
+                      - Resource = "arn:aws:logs:ap-northeast-2:233338945536:log-group:/aws/cloudtrail/finpay-dev:*"
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - role        = "finpay-dev-cloudtrail-logs-role" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.logging.aws_iam_role_policy.vpc_flow_logs will be destroyed
+  - resource "aws_iam_role_policy" "vpc_flow_logs" {
+      - id          = "finpay-dev-vpc-flow-logs-role:finpay-dev-vpc-flow-logs-policy" -> null
+      - name        = "finpay-dev-vpc-flow-logs-policy" -> null
+      - policy      = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action   = [
+                          - "logs:CreateLogStream",
+                          - "logs:PutLogEvents",
+                          - "logs:DescribeLogGroups",
+                          - "logs:DescribeLogStreams",
+                        ]
+                      - Effect   = "Allow"
+                      - Resource = "*"
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - role        = "finpay-dev-vpc-flow-logs-role" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.logging.aws_s3_bucket.central_logs will be destroyed
+  - resource "aws_s3_bucket" "central_logs" {
+      - arn                         = "arn:aws:s3:::finpay-dev-logs-233338945536" -> null
+      - bucket                      = "finpay-dev-logs-233338945536" -> null
+      - bucket_domain_name          = "finpay-dev-logs-233338945536.s3.amazonaws.com" -> null
+      - bucket_regional_domain_name = "finpay-dev-logs-233338945536.s3.ap-northeast-2.amazonaws.com" -> null
+      - force_destroy               = true -> null
+      - hosted_zone_id              = "Z3W03O7B5YMIYP" -> null
+      - id                          = "finpay-dev-logs-233338945536" -> null
+      - object_lock_enabled         = true -> null
+      - policy                      = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "s3:GetBucketAcl"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "cloudtrail.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536"
+                      - Sid       = "CloudTrailAclCheck"
+                    },
+                  - {
+                      - Action    = "s3:PutObject"
+                      - Condition = {
+                          - StringEquals = {
+                              - "s3:x-amz-acl" = "bucket-owner-full-control"
+                            }
+                        }
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "cloudtrail.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536/AWSLogs/233338945536/*"
+                      - Sid       = "CloudTrailWrite"
+                    },
+                  - {
+                      - Action    = "s3:GetBucketAcl"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "config.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536"
+                      - Sid       = "ConfigAclCheck"
+                    },
+                  - {
+                      - Action    = "s3:PutObject"
+                      - Condition = {
+                          - StringEquals = {
+                              - "s3:x-amz-acl" = "bucket-owner-full-control"
+                            }
+                        }
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "config.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536/Config/AWSLogs/233338945536/Config/*"
+                      - Sid       = "ConfigWrite"
+                    },
+                  - {
+                      - Action    = "s3:GetBucketAcl"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "logdelivery.elasticloadbalancing.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536"
+                      - Sid       = "AlbLogDeliveryAclCheck"
+                    },
+                  - {
+                      - Action    = "s3:PutObject"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "logdelivery.elasticloadbalancing.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536/alb/AWSLogs/233338945536/*"
+                      - Sid       = "AlbLogDeliveryWrite"
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - region                      = "ap-northeast-2" -> null
+      - request_payer               = "BucketOwner" -> null
+      - tags                        = {} -> null
+      - tags_all                    = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Project"      = "finpay"
+        } -> null
+        # (2 unchanged attributes hidden)
+
+      - grant {
+          - id          = "2ea73b7040ee30165bcbf56323d8a4bd88ad6f63a94173b2a71153568173fe9d" -> null
+          - permissions = [
+              - "FULL_CONTROL",
+            ] -> null
+          - type        = "CanonicalUser" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - object_lock_configuration {
+          - object_lock_enabled = "Enabled" -> null
+        }
+
+      - server_side_encryption_configuration {
+          - rule {
+              - bucket_key_enabled = false -> null
+
+              - apply_server_side_encryption_by_default {
+                  - kms_master_key_id = "arn:aws:kms:ap-northeast-2:233338945536:key/09ac44ec-7cc8-4f9c-97e2-5b8f4f23a0bd" -> null
+                  - sse_algorithm     = "aws:kms" -> null
+                }
+            }
+        }
+
+      - versioning {
+          - enabled    = true -> null
+          - mfa_delete = false -> null
+        }
+    }
+
+  # module.logging.aws_s3_bucket_object_lock_configuration.central_logs will be destroyed
+  - resource "aws_s3_bucket_object_lock_configuration" "central_logs" {
+      - bucket                = "finpay-dev-logs-233338945536" -> null
+      - id                    = "finpay-dev-logs-233338945536" -> null
+      - object_lock_enabled   = "Enabled" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.logging.aws_s3_bucket_policy.central_logs will be destroyed
+  - resource "aws_s3_bucket_policy" "central_logs" {
+      - bucket = "finpay-dev-logs-233338945536" -> null
+      - id     = "finpay-dev-logs-233338945536" -> null
+      - policy = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "s3:GetBucketAcl"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "cloudtrail.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536"
+                      - Sid       = "CloudTrailAclCheck"
+                    },
+                  - {
+                      - Action    = "s3:PutObject"
+                      - Condition = {
+                          - StringEquals = {
+                              - "s3:x-amz-acl" = "bucket-owner-full-control"
+                            }
+                        }
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "cloudtrail.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536/AWSLogs/233338945536/*"
+                      - Sid       = "CloudTrailWrite"
+                    },
+                  - {
+                      - Action    = "s3:GetBucketAcl"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "config.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536"
+                      - Sid       = "ConfigAclCheck"
+                    },
+                  - {
+                      - Action    = "s3:PutObject"
+                      - Condition = {
+                          - StringEquals = {
+                              - "s3:x-amz-acl" = "bucket-owner-full-control"
+                            }
+                        }
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "config.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536/Config/AWSLogs/233338945536/Config/*"
+                      - Sid       = "ConfigWrite"
+                    },
+                  - {
+                      - Action    = "s3:GetBucketAcl"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "logdelivery.elasticloadbalancing.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536"
+                      - Sid       = "AlbLogDeliveryAclCheck"
+                    },
+                  - {
+                      - Action    = "s3:PutObject"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "logdelivery.elasticloadbalancing.amazonaws.com"
+                        }
+                      - Resource  = "arn:aws:s3:::finpay-dev-logs-233338945536/alb/AWSLogs/233338945536/*"
+                      - Sid       = "AlbLogDeliveryWrite"
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+    }
+
+  # module.logging.aws_s3_bucket_public_access_block.central_logs will be destroyed
+  - resource "aws_s3_bucket_public_access_block" "central_logs" {
+      - block_public_acls       = true -> null
+      - block_public_policy     = true -> null
+      - bucket                  = "finpay-dev-logs-233338945536" -> null
+      - id                      = "finpay-dev-logs-233338945536" -> null
+      - ignore_public_acls      = true -> null
+      - restrict_public_buckets = true -> null
+    }
+
+  # module.logging.aws_s3_bucket_server_side_encryption_configuration.central_logs will be destroyed
+  - resource "aws_s3_bucket_server_side_encryption_configuration" "central_logs" {
+      - bucket                = "finpay-dev-logs-233338945536" -> null
+      - id                    = "finpay-dev-logs-233338945536" -> null
+        # (1 unchanged attribute hidden)
+
+      - rule {
+          - bucket_key_enabled = false -> null
+
+          - apply_server_side_encryption_by_default {
+              - kms_master_key_id = "arn:aws:kms:ap-northeast-2:233338945536:key/09ac44ec-7cc8-4f9c-97e2-5b8f4f23a0bd" -> null
+              - sse_algorithm     = "aws:kms" -> null
+            }
+        }
+    }
+
+  # module.logging.aws_s3_bucket_versioning.central_logs will be destroyed
+  - resource "aws_s3_bucket_versioning" "central_logs" {
+      - bucket                = "finpay-dev-logs-233338945536" -> null
+      - id                    = "finpay-dev-logs-233338945536" -> null
+        # (1 unchanged attribute hidden)
+
+      - versioning_configuration {
+          - mfa_delete = "Disabled" -> null
+          - status     = "Enabled" -> null
+        }
+    }
+
+  # module.network.aws_internet_gateway.main will be destroyed
+  - resource "aws_internet_gateway" "main" {
+      - arn      = "arn:aws:ec2:ap-northeast-2:233338945536:internet-gateway/igw-0bd5e4cd74f2479fe" -> null
+      - id       = "igw-0bd5e4cd74f2479fe" -> null
+      - owner_id = "233338945536" -> null
+      - tags     = {
+          - "Name" = "finpay-dev-igw"
+        } -> null
+      - tags_all = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-igw"
+          - "Project"      = "finpay"
+        } -> null
+      - vpc_id   = "vpc-02635aede3e996576" -> null
+    }
+
+  # module.network.aws_subnet.app["a"] will be destroyed
+  - resource "aws_subnet" "app" {
+      - arn                                            = "arn:aws:ec2:ap-northeast-2:233338945536:subnet/subnet-0e05d07e4c45b3abf" -> null
+      - assign_ipv6_address_on_creation                = false -> null
+      - availability_zone                              = "ap-northeast-2a" -> null
+      - availability_zone_id                           = "apne2-az1" -> null
+      - cidr_block                                     = "10.0.10.0/24" -> null
+      - enable_dns64                                   = false -> null
+      - enable_lni_at_device_index                     = 0 -> null
+      - enable_resource_name_dns_a_record_on_launch    = false -> null
+      - enable_resource_name_dns_aaaa_record_on_launch = false -> null
+      - id                                             = "subnet-0e05d07e4c45b3abf" -> null
+      - ipv6_native                                    = false -> null
+      - map_customer_owned_ip_on_launch                = false -> null
+      - map_public_ip_on_launch                        = false -> null
+      - owner_id                                       = "233338945536" -> null
+      - private_dns_hostname_type_on_launch            = "ip-name" -> null
+      - tags                                           = {
+          - "Name" = "finpay-dev-app-a"
+          - "Tier" = "private-app"
+        } -> null
+      - tags_all                                       = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-app-a"
+          - "Project"      = "finpay"
+          - "Tier"         = "private-app"
+        } -> null
+      - vpc_id                                         = "vpc-02635aede3e996576" -> null
+        # (4 unchanged attributes hidden)
+    }
+
+  # module.network.aws_subnet.app["c"] will be destroyed
+  - resource "aws_subnet" "app" {
+      - arn                                            = "arn:aws:ec2:ap-northeast-2:233338945536:subnet/subnet-071867d1efd53c89f" -> null
+      - assign_ipv6_address_on_creation                = false -> null
+      - availability_zone                              = "ap-northeast-2c" -> null
+      - availability_zone_id                           = "apne2-az3" -> null
+      - cidr_block                                     = "10.0.11.0/24" -> null
+      - enable_dns64                                   = false -> null
+      - enable_lni_at_device_index                     = 0 -> null
+      - enable_resource_name_dns_a_record_on_launch    = false -> null
+      - enable_resource_name_dns_aaaa_record_on_launch = false -> null
+      - id                                             = "subnet-071867d1efd53c89f" -> null
+      - ipv6_native                                    = false -> null
+      - map_customer_owned_ip_on_launch                = false -> null
+      - map_public_ip_on_launch                        = false -> null
+      - owner_id                                       = "233338945536" -> null
+      - private_dns_hostname_type_on_launch            = "ip-name" -> null
+      - tags                                           = {
+          - "Name" = "finpay-dev-app-c"
+          - "Tier" = "private-app"
+        } -> null
+      - tags_all                                       = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-app-c"
+          - "Project"      = "finpay"
+          - "Tier"         = "private-app"
+        } -> null
+      - vpc_id                                         = "vpc-02635aede3e996576" -> null
+        # (4 unchanged attributes hidden)
+    }
+
+  # module.network.aws_subnet.db["a"] will be destroyed
+  - resource "aws_subnet" "db" {
+      - arn                                            = "arn:aws:ec2:ap-northeast-2:233338945536:subnet/subnet-02a1fe7a57fcdc89c" -> null
+      - assign_ipv6_address_on_creation                = false -> null
+      - availability_zone                              = "ap-northeast-2a" -> null
+      - availability_zone_id                           = "apne2-az1" -> null
+      - cidr_block                                     = "10.0.20.0/24" -> null
+      - enable_dns64                                   = false -> null
+      - enable_lni_at_device_index                     = 0 -> null
+      - enable_resource_name_dns_a_record_on_launch    = false -> null
+      - enable_resource_name_dns_aaaa_record_on_launch = false -> null
+      - id                                             = "subnet-02a1fe7a57fcdc89c" -> null
+      - ipv6_native                                    = false -> null
+      - map_customer_owned_ip_on_launch                = false -> null
+      - map_public_ip_on_launch                        = false -> null
+      - owner_id                                       = "233338945536" -> null
+      - private_dns_hostname_type_on_launch            = "ip-name" -> null
+      - tags                                           = {
+          - "Name" = "finpay-dev-db-a"
+          - "Tier" = "isolated-db"
+        } -> null
+      - tags_all                                       = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-db-a"
+          - "Project"      = "finpay"
+          - "Tier"         = "isolated-db"
+        } -> null
+      - vpc_id                                         = "vpc-02635aede3e996576" -> null
+        # (4 unchanged attributes hidden)
+    }
+
+  # module.network.aws_subnet.db["c"] will be destroyed
+  - resource "aws_subnet" "db" {
+      - arn                                            = "arn:aws:ec2:ap-northeast-2:233338945536:subnet/subnet-082e2de795e7807ad" -> null
+      - assign_ipv6_address_on_creation                = false -> null
+      - availability_zone                              = "ap-northeast-2c" -> null
+      - availability_zone_id                           = "apne2-az3" -> null
+      - cidr_block                                     = "10.0.21.0/24" -> null
+      - enable_dns64                                   = false -> null
+      - enable_lni_at_device_index                     = 0 -> null
+      - enable_resource_name_dns_a_record_on_launch    = false -> null
+      - enable_resource_name_dns_aaaa_record_on_launch = false -> null
+      - id                                             = "subnet-082e2de795e7807ad" -> null
+      - ipv6_native                                    = false -> null
+      - map_customer_owned_ip_on_launch                = false -> null
+      - map_public_ip_on_launch                        = false -> null
+      - owner_id                                       = "233338945536" -> null
+      - private_dns_hostname_type_on_launch            = "ip-name" -> null
+      - tags                                           = {
+          - "Name" = "finpay-dev-db-c"
+          - "Tier" = "isolated-db"
+        } -> null
+      - tags_all                                       = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-db-c"
+          - "Project"      = "finpay"
+          - "Tier"         = "isolated-db"
+        } -> null
+      - vpc_id                                         = "vpc-02635aede3e996576" -> null
+        # (4 unchanged attributes hidden)
+    }
+
+  # module.network.aws_subnet.public["a"] will be destroyed
+  - resource "aws_subnet" "public" {
+      - arn                                            = "arn:aws:ec2:ap-northeast-2:233338945536:subnet/subnet-0163b9a867fdcc069" -> null
+      - assign_ipv6_address_on_creation                = false -> null
+      - availability_zone                              = "ap-northeast-2a" -> null
+      - availability_zone_id                           = "apne2-az1" -> null
+      - cidr_block                                     = "10.0.0.0/24" -> null
+      - enable_dns64                                   = false -> null
+      - enable_lni_at_device_index                     = 0 -> null
+      - enable_resource_name_dns_a_record_on_launch    = false -> null
+      - enable_resource_name_dns_aaaa_record_on_launch = false -> null
+      - id                                             = "subnet-0163b9a867fdcc069" -> null
+      - ipv6_native                                    = false -> null
+      - map_customer_owned_ip_on_launch                = false -> null
+      - map_public_ip_on_launch                        = false -> null
+      - owner_id                                       = "233338945536" -> null
+      - private_dns_hostname_type_on_launch            = "ip-name" -> null
+      - tags                                           = {
+          - "Name" = "finpay-dev-public-a"
+          - "Tier" = "public"
+        } -> null
+      - tags_all                                       = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-public-a"
+          - "Project"      = "finpay"
+          - "Tier"         = "public"
+        } -> null
+      - vpc_id                                         = "vpc-02635aede3e996576" -> null
+        # (4 unchanged attributes hidden)
+    }
+
+  # module.network.aws_subnet.public["c"] will be destroyed
+  - resource "aws_subnet" "public" {
+      - arn                                            = "arn:aws:ec2:ap-northeast-2:233338945536:subnet/subnet-04b54332aaea98f2a" -> null
+      - assign_ipv6_address_on_creation                = false -> null
+      - availability_zone                              = "ap-northeast-2c" -> null
+      - availability_zone_id                           = "apne2-az3" -> null
+      - cidr_block                                     = "10.0.1.0/24" -> null
+      - enable_dns64                                   = false -> null
+      - enable_lni_at_device_index                     = 0 -> null
+      - enable_resource_name_dns_a_record_on_launch    = false -> null
+      - enable_resource_name_dns_aaaa_record_on_launch = false -> null
+      - id                                             = "subnet-04b54332aaea98f2a" -> null
+      - ipv6_native                                    = false -> null
+      - map_customer_owned_ip_on_launch                = false -> null
+      - map_public_ip_on_launch                        = false -> null
+      - owner_id                                       = "233338945536" -> null
+      - private_dns_hostname_type_on_launch            = "ip-name" -> null
+      - tags                                           = {
+          - "Name" = "finpay-dev-public-c"
+          - "Tier" = "public"
+        } -> null
+      - tags_all                                       = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-public-c"
+          - "Project"      = "finpay"
+          - "Tier"         = "public"
+        } -> null
+      - vpc_id                                         = "vpc-02635aede3e996576" -> null
+        # (4 unchanged attributes hidden)
+    }
+
+  # module.network.aws_vpc.main will be destroyed
+  - resource "aws_vpc" "main" {
+      - arn                                  = "arn:aws:ec2:ap-northeast-2:233338945536:vpc/vpc-02635aede3e996576" -> null
+      - assign_generated_ipv6_cidr_block     = false -> null
+      - cidr_block                           = "10.0.0.0/16" -> null
+      - default_network_acl_id               = "acl-0453bb37dca77cbff" -> null
+      - default_route_table_id               = "rtb-090979d71bed9ee38" -> null
+      - default_security_group_id            = "sg-04d75835a62f7905a" -> null
+      - dhcp_options_id                      = "dopt-0e460c24508a471a1" -> null
+      - enable_dns_hostnames                 = true -> null
+      - enable_dns_support                   = true -> null
+      - enable_network_address_usage_metrics = false -> null
+      - id                                   = "vpc-02635aede3e996576" -> null
+      - instance_tenancy                     = "default" -> null
+      - ipv6_netmask_length                  = 0 -> null
+      - main_route_table_id                  = "rtb-090979d71bed9ee38" -> null
+      - owner_id                             = "233338945536" -> null
+      - tags                                 = {
+          - "Name" = "finpay-dev-vpc"
+        } -> null
+      - tags_all                             = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-vpc"
+          - "Project"      = "finpay"
+        } -> null
+        # (4 unchanged attributes hidden)
+    }
+
+  # module.security_groups.aws_security_group.alb will be destroyed
+  - resource "aws_security_group" "alb" {
+      - arn                    = "arn:aws:ec2:ap-northeast-2:233338945536:security-group/sg-0f619c05fa2ae9a31" -> null
+      - description            = "Public ALB ingress" -> null
+      - egress                 = [
+          - {
+              - cidr_blocks      = [
+                  - "10.0.0.0/16",
+                ]
+              - from_port        = 8080
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 8080
+                # (1 unchanged attribute hidden)
+            },
+        ] -> null
+      - id                     = "sg-0f619c05fa2ae9a31" -> null
+      - ingress                = [
+          - {
+              - cidr_blocks      = [
+                  - "0.0.0.0/0",
+                ]
+              - description      = "HTTP from allowed CIDRs"
+              - from_port        = 80
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 80
+            },
+          - {
+              - cidr_blocks      = [
+                  - "0.0.0.0/0",
+                ]
+              - description      = "HTTPS from allowed CIDRs"
+              - from_port        = 443
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 443
+            },
+        ] -> null
+      - name                   = "finpay-dev-alb-sg" -> null
+      - owner_id               = "233338945536" -> null
+      - revoke_rules_on_delete = false -> null
+      - tags                   = {
+          - "Name" = "finpay-dev-alb-sg"
+        } -> null
+      - tags_all               = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-alb-sg"
+          - "Project"      = "finpay"
+        } -> null
+      - vpc_id                 = "vpc-02635aede3e996576" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.security_groups.aws_security_group.app will be destroyed
+  - resource "aws_security_group" "app" {
+      - arn                    = "arn:aws:ec2:ap-northeast-2:233338945536:security-group/sg-013bc5a12671e0b35" -> null
+      - description            = "Private app tier access from ALB only" -> null
+      - egress                 = [
+          - {
+              - cidr_blocks      = [
+                  - "0.0.0.0/0",
+                ]
+              - description      = "HTTPS egress through NAT or VPC endpoints"
+              - from_port        = 443
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 443
+            },
+          - {
+              - cidr_blocks      = [
+                  - "10.0.0.0/16",
+                ]
+              - description      = "PostgreSQL to DB"
+              - from_port        = 5432
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 5432
+            },
+        ] -> null
+      - id                     = "sg-013bc5a12671e0b35" -> null
+      - ingress                = [
+          - {
+              - cidr_blocks      = []
+              - description      = "App port from ALB"
+              - from_port        = 8080
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = [
+                  - "sg-0f619c05fa2ae9a31",
+                ]
+              - self             = false
+              - to_port          = 8080
+            },
+        ] -> null
+      - name                   = "finpay-dev-app-sg" -> null
+      - owner_id               = "233338945536" -> null
+      - revoke_rules_on_delete = false -> null
+      - tags                   = {
+          - "Name" = "finpay-dev-app-sg"
+        } -> null
+      - tags_all               = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-app-sg"
+          - "Project"      = "finpay"
+        } -> null
+      - vpc_id                 = "vpc-02635aede3e996576" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # module.security_groups.aws_security_group.db will be destroyed
+  - resource "aws_security_group" "db" {
+      - arn                    = "arn:aws:ec2:ap-northeast-2:233338945536:security-group/sg-01747160c6edee365" -> null
+      - description            = "Isolated RDS PostgreSQL access from app tier only" -> null
+      - egress                 = [] -> null
+      - id                     = "sg-01747160c6edee365" -> null
+      - ingress                = [
+          - {
+              - cidr_blocks      = []
+              - description      = "PostgreSQL from app tier"
+              - from_port        = 5432
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = [
+                  - "sg-013bc5a12671e0b35",
+                ]
+              - self             = false
+              - to_port          = 5432
+            },
+        ] -> null
+      - name                   = "finpay-dev-db-sg" -> null
+      - owner_id               = "233338945536" -> null
+      - revoke_rules_on_delete = false -> null
+      - tags                   = {
+          - "Name" = "finpay-dev-db-sg"
+        } -> null
+      - tags_all               = {
+          - "Architecture" = "gpt-drawio-full-fintech-security"
+          - "Environment"  = "dev"
+          - "ManagedBy"    = "terraform"
+          - "Name"         = "finpay-dev-db-sg"
+          - "Project"      = "finpay"
+        } -> null
+      - vpc_id                 = "vpc-02635aede3e996576" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+Plan: 0 to add, 0 to change, 42 to destroy.
+
+Changes to Outputs:
+  - alb_dns_name                        = "finpay-dev-alb-2007566830.ap-northeast-2.elb.amazonaws.com" -> null
+  - app_base_url                        = "https://app.finpay-sec.p-e.kr" -> null
+  - app_subnet_ids                      = [
+      - "subnet-0e05d07e4c45b3abf",
+      - "subnet-071867d1efd53c89f",
+    ] -> null
+  - central_logs_bucket                 = "finpay-dev-logs-233338945536" -> null
+  - cloudfront_aliases                  = [
+      - "app.finpay-sec.p-e.kr",
+    ] -> null
+  - cloudfront_distribution_domain_name = "dzhg4wi4coxcz.cloudfront.net" -> null
+  - cognito_hosted_ui_base_url          = "https://finpay-dev-233338945536.auth.ap-northeast-2.amazoncognito.com" -> null
+  - cognito_hosted_ui_domain            = "finpay-dev-233338945536" -> null
+  - cognito_user_pool_id                = "ap-northeast-2_oEW7fgEsh" -> null
+  - cognito_web_client_id               = "7t50gvqnp2nlkcckdfnbgd2qsv" -> null
+  - db_subnet_ids                       = [
+      - "subnet-02a1fe7a57fcdc89c",
+      - "subnet-082e2de795e7807ad",
+    ] -> null
+  - public_subnet_ids                   = [
+      - "subnet-0163b9a867fdcc069",
+      - "subnet-04b54332aaea98f2a",
+    ] -> null
+  - rds_endpoint                        = "finpay-dev-postgres.cl2ka6y6864c.ap-northeast-2.rds.amazonaws.com" -> null
+  - rds_master_secret_arn               = (sensitive value) -> null
+  - vpc_id                              = "vpc-02635aede3e996576" -> null

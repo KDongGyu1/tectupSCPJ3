@@ -144,12 +144,20 @@ resource "aws_wafv2_web_acl" "alb" {
     priority = 10
 
     action {
-      count {}
+      dynamic "count" {
+        for_each = var.waf_rate_rule_action == "count" ? [1] : []
+        content {}
+      }
+
+      dynamic "block" {
+        for_each = var.waf_rate_rule_action == "block" ? [1] : []
+        content {}
+      }
     }
 
     statement {
       rate_based_statement {
-        limit              = 300
+        limit              = var.waf_rate_limits.auth
         aggregate_key_type = "IP"
 
         scope_down_statement {
@@ -182,12 +190,20 @@ resource "aws_wafv2_web_acl" "alb" {
     priority = 11
 
     action {
-      count {}
+      dynamic "count" {
+        for_each = var.waf_rate_rule_action == "count" ? [1] : []
+        content {}
+      }
+
+      dynamic "block" {
+        for_each = var.waf_rate_rule_action == "block" ? [1] : []
+        content {}
+      }
     }
 
     statement {
       rate_based_statement {
-        limit              = 500
+        limit              = var.waf_rate_limits.payments
         aggregate_key_type = "IP"
 
         scope_down_statement {
@@ -220,12 +236,20 @@ resource "aws_wafv2_web_acl" "alb" {
     priority = 12
 
     action {
-      count {}
+      dynamic "count" {
+        for_each = var.waf_rate_rule_action == "count" ? [1] : []
+        content {}
+      }
+
+      dynamic "block" {
+        for_each = var.waf_rate_rule_action == "block" ? [1] : []
+        content {}
+      }
     }
 
     statement {
       rate_based_statement {
-        limit              = 1000
+        limit              = var.waf_rate_limits.transactions
         aggregate_key_type = "IP"
 
         scope_down_statement {
@@ -258,12 +282,20 @@ resource "aws_wafv2_web_acl" "alb" {
     priority = 13
 
     action {
-      count {}
+      dynamic "count" {
+        for_each = var.waf_rate_rule_action == "count" ? [1] : []
+        content {}
+      }
+
+      dynamic "block" {
+        for_each = var.waf_rate_rule_action == "block" ? [1] : []
+        content {}
+      }
     }
 
     statement {
       rate_based_statement {
-        limit              = 100
+        limit              = var.waf_rate_limits.ops
         aggregate_key_type = "IP"
 
         scope_down_statement {
@@ -296,12 +328,20 @@ resource "aws_wafv2_web_acl" "alb" {
     priority = 14
 
     action {
-      count {}
+      dynamic "count" {
+        for_each = var.waf_rate_rule_action == "count" ? [1] : []
+        content {}
+      }
+
+      dynamic "block" {
+        for_each = var.waf_rate_rule_action == "block" ? [1] : []
+        content {}
+      }
     }
 
     statement {
       rate_based_statement {
-        limit              = 100
+        limit              = var.waf_rate_limits.audit
         aggregate_key_type = "IP"
 
         scope_down_statement {
