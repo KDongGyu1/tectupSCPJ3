@@ -15,6 +15,8 @@ module "network" {
   app_subnet_cidrs    = var.app_subnet_cidrs
   db_subnet_cidrs     = var.db_subnet_cidrs
   s3_gateway_endpoint_bucket_arns = distinct(concat(var.s3_gateway_endpoint_bucket_arns, [
+    "arn:aws:s3:::al2023-repos-${var.aws_region}-de612dc2",
+    "arn:aws:s3:::al2023-repos-${var.aws_region}-de612dc2/*",
     "arn:aws:s3:::${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}",
     "arn:aws:s3:::${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}/tmp/*",
   ]))
