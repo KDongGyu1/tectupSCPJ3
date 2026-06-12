@@ -13,6 +13,79 @@ data "aws_ami" "al2023" {
   }
 }
 
+data "aws_canonical_user_id" "current" {}
+
+data "aws_cloudfront_log_delivery_canonical_user_id" "current" {}
+
+resource "aws_s3_bucket" "cloudfront_logs" {
+  count = var.enable_cloudfront_standard_logs ? 1 : 0
+
+  bucket        = "${var.name_prefix}-cloudfront-logs-${var.account_id}"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "cloudfront_logs" {
+  count = var.enable_cloudfront_standard_logs ? 1 : 0
+
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
+resource "aws_s3_bucket_acl" "cloudfront_logs" {
+  count = var.enable_cloudfront_standard_logs ? 1 : 0
+
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+
+  access_control_policy {
+    grant {
+      grantee {
+        id   = data.aws_canonical_user_id.current.id
+        type = "CanonicalUser"
+      }
+      permission = "FULL_CONTROL"
+    }
+
+    grant {
+      grantee {
+        id   = data.aws_cloudfront_log_delivery_canonical_user_id.current.id
+        type = "CanonicalUser"
+      }
+      permission = "FULL_CONTROL"
+    }
+
+    owner {
+      id = data.aws_canonical_user_id.current.id
+    }
+  }
+
+  depends_on = [aws_s3_bucket_ownership_controls.cloudfront_logs]
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "cloudfront_logs" {
+  count = var.enable_cloudfront_standard_logs ? 1 : 0
+
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "cloudfront_logs" {
+  count = var.enable_cloudfront_standard_logs ? 1 : 0
+
+  bucket                  = aws_s3_bucket.cloudfront_logs[0].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = false
+  restrict_public_buckets = true
+}
+
 resource "aws_cloudwatch_log_group" "app" {
   for_each          = local.app_services
   name              = "/finpay/${var.name_prefix}/${each.key}"
@@ -49,6 +122,16 @@ resource "aws_cloudfront_distribution" "app" {
   comment         = "${var.name_prefix} application HTTPS entry point"
   price_class     = "PriceClass_200"
   aliases         = local.cloudfront_custom_certificate ? var.cloudfront_aliases : []
+
+  dynamic "logging_config" {
+    for_each = var.enable_cloudfront_standard_logs ? [1] : []
+
+    content {
+      bucket          = aws_s3_bucket.cloudfront_logs[0].bucket_domain_name
+      include_cookies = false
+      prefix          = "standard/"
+    }
+  }
 
   origin {
     domain_name = local.cloudfront_origin_domain_name
@@ -93,6 +176,8 @@ resource "aws_cloudfront_distribution" "app" {
     ssl_support_method             = local.cloudfront_custom_certificate ? "sni-only" : null
     minimum_protocol_version       = "TLSv1.2_2021"
   }
+
+  depends_on = [aws_s3_bucket_acl.cloudfront_logs]
 }
 
 resource "aws_lb_target_group" "app" {

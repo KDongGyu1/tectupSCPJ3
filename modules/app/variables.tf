@@ -1,4 +1,5 @@
 variable "name_prefix" { type = string }
+variable "account_id" { type = string }
 variable "environment" { type = string }
 variable "vpc_id" { type = string }
 variable "public_subnet_ids" { type = list(string) }
@@ -16,6 +17,7 @@ variable "enable_cloudfront_origin_https" { type = bool }
 variable "cloudfront_aliases" { type = list(string) }
 variable "cloudfront_acm_certificate_arn" { type = string }
 variable "cloudfront_origin_domain_name" { type = string }
+variable "enable_cloudfront_standard_logs" { type = bool }
 variable "app_instance_type" { type = string }
 variable "app_desired_capacity" { type = number }
 variable "app_min_size" { type = number }

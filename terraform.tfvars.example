@@ -24,6 +24,7 @@ enable_cloudfront_origin_https = false
 cloudfront_origin_domain_name  = ""
 cloudfront_aliases             = []
 cloudfront_acm_certificate_arn = ""
+enable_cloudfront_standard_logs = true
 
 app_instance_type    = "t3.micro"
 app_desired_capacity = 1

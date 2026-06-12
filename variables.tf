@@ -124,6 +124,12 @@ variable "cloudfront_origin_domain_name" {
   default     = ""
 }
 
+variable "enable_cloudfront_standard_logs" {
+  description = "Store CloudFront standard access logs in a dedicated S3 bucket."
+  type        = bool
+  default     = true
+}
+
 variable "app_instance_type" {
   description = "EC2 instance type for app ASGs."
   type        = string

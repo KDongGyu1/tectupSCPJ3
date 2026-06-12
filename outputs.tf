@@ -10,6 +10,7 @@ output "cloudfront_distribution_id" { value = module.app.cloudfront_distribution
 output "cloudfront_distribution_domain_name" { value = module.app.cloudfront_distribution_domain_name }
 output "cloudfront_aliases" { value = module.app.cloudfront_aliases }
 output "cloudfront_origin_domain_name" { value = module.app.cloudfront_origin_domain_name }
+output "cloudfront_standard_logs_bucket" { value = module.app.cloudfront_standard_logs_bucket }
 output "s3_gateway_endpoint_id" { value = module.network.s3_gateway_endpoint_id }
 output "cognito_user_pool_id" { value = module.auth.cognito_user_pool_id }
 output "cognito_web_client_id" { value = module.auth.cognito_web_client_id }

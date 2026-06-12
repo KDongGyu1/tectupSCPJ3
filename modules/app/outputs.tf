@@ -7,5 +7,8 @@ output "cloudfront_distribution_id" { value = aws_cloudfront_distribution.app.id
 output "cloudfront_distribution_domain_name" { value = aws_cloudfront_distribution.app.domain_name }
 output "cloudfront_aliases" { value = aws_cloudfront_distribution.app.aliases }
 output "cloudfront_origin_domain_name" { value = local.cloudfront_origin_domain_name }
+output "cloudfront_standard_logs_bucket" {
+  value = var.enable_cloudfront_standard_logs ? aws_s3_bucket.cloudfront_logs[0].bucket : null
+}
 output "app_base_url" { value = var.app_base_url != "" ? trimsuffix(var.app_base_url, "/") : "https://${aws_cloudfront_distribution.app.domain_name}" }
 output "target_group_arns" { value = { for name, tg in aws_lb_target_group.app : name => tg.arn } }
