@@ -124,6 +124,53 @@ variable "cloudfront_origin_domain_name" {
   default     = ""
 }
 
+variable "enable_cloudfront_viewer_mtls" {
+  description = "Require or request client certificates at the CloudFront viewer edge using a CloudFront trust store."
+  type        = bool
+  default     = false
+}
+
+variable "cloudfront_viewer_mtls_mode" {
+  description = "CloudFront viewer mTLS mode. Use required to block clients without a trusted certificate, or optional to request a certificate without requiring it."
+  type        = string
+  default     = "required"
+
+  validation {
+    condition     = contains(["required", "optional"], var.cloudfront_viewer_mtls_mode)
+    error_message = "cloudfront_viewer_mtls_mode must be required or optional."
+  }
+}
+
+variable "cloudfront_viewer_mtls_ca_bundle_path" {
+  description = "Local path to the PEM CA bundle that CloudFront will trust for viewer client certificates."
+  type        = string
+  default     = "certs/mtls/client-ca-bundle.pem"
+}
+
+variable "cloudfront_viewer_mtls_ca_bundle_s3_key" {
+  description = "S3 object key used to store the CloudFront viewer mTLS CA bundle."
+  type        = string
+  default     = "cloudfront-viewer-mtls/client-ca-bundle.pem"
+}
+
+variable "cloudfront_viewer_mtls_trust_store_name" {
+  description = "Optional CloudFront trust store name. Leave empty to use the environment-specific default."
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_viewer_mtls_advertise_ca_names" {
+  description = "Advertise the trusted CA names to viewers during the TLS client certificate request."
+  type        = bool
+  default     = true
+}
+
+variable "cloudfront_viewer_mtls_ignore_certificate_expiry" {
+  description = "Ignore viewer client certificate expiry during CloudFront mTLS validation. Keep false for normal security posture."
+  type        = bool
+  default     = false
+}
+
 variable "app_instance_type" {
   description = "EC2 instance type for app ASGs."
   type        = string
