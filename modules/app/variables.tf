@@ -1,4 +1,5 @@
 variable "name_prefix" { type = string }
+variable "account_id" { type = string }
 variable "environment" { type = string }
 variable "account_id" { type = string }
 variable "vpc_id" { type = string }
@@ -17,6 +18,7 @@ variable "enable_cloudfront_origin_https" { type = bool }
 variable "cloudfront_aliases" { type = list(string) }
 variable "cloudfront_acm_certificate_arn" { type = string }
 variable "cloudfront_origin_domain_name" { type = string }
+variable "enable_cloudfront_standard_logs" { type = bool }
 variable "enable_cloudfront_viewer_mtls" { type = bool }
 variable "cloudfront_viewer_mtls_mode" { type = string }
 variable "cloudfront_viewer_mtls_ca_bundle_path" { type = string }

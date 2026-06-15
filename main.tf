@@ -64,6 +64,7 @@ module "app" {
   source = "./modules/app"
 
   name_prefix                    = local.name_prefix
+  account_id                     = data.aws_caller_identity.current.account_id
   environment                    = var.environment
   account_id                     = data.aws_caller_identity.current.account_id
   aws_region                     = var.aws_region
@@ -106,6 +107,8 @@ module "app" {
   rds_sslmode                                      = var.rds_sslmode
   app_artifact_bucket                              = "${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}"
   app_artifact_key                                 = "tmp/server.py"
+
+  enable_cloudfront_standard_logs = var.enable_cloudfront_standard_logs
 
   depends_on = [module.logging, module.data]
 }

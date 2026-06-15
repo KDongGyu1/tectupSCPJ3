@@ -10,6 +10,7 @@ output "cloudfront_distribution_id" { value = module.app.cloudfront_distribution
 output "cloudfront_distribution_domain_name" { value = module.app.cloudfront_distribution_domain_name }
 output "cloudfront_aliases" { value = module.app.cloudfront_aliases }
 output "cloudfront_origin_domain_name" { value = module.app.cloudfront_origin_domain_name }
+output "cloudfront_standard_logs_bucket" { value = module.app.cloudfront_standard_logs_bucket }
 output "cloudfront_viewer_mtls_enabled" { value = module.app.cloudfront_viewer_mtls_enabled }
 output "cloudfront_viewer_mtls_ca_bundle_bucket" { value = module.app.cloudfront_viewer_mtls_ca_bundle_bucket }
 output "cloudfront_viewer_mtls_trust_store_name" { value = module.app.cloudfront_viewer_mtls_trust_store_name }
