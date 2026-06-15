@@ -24,6 +24,17 @@ enable_cloudfront_origin_https = false
 cloudfront_origin_domain_name  = ""
 cloudfront_aliases             = []
 cloudfront_acm_certificate_arn = ""
+enable_cloudfront_standard_logs = true
+
+# Viewer mTLS between clients and CloudFront. Generate local test material with:
+# ./scripts/generate-viewer-mtls-certs.sh
+enable_cloudfront_viewer_mtls                    = false
+cloudfront_viewer_mtls_mode                      = "required"
+cloudfront_viewer_mtls_ca_bundle_path            = "certs/mtls/client-ca-bundle.pem"
+cloudfront_viewer_mtls_ca_bundle_s3_key          = "cloudfront-viewer-mtls/client-ca-bundle.pem"
+cloudfront_viewer_mtls_trust_store_name          = ""
+cloudfront_viewer_mtls_advertise_ca_names        = true
+cloudfront_viewer_mtls_ignore_certificate_expiry = false
 
 app_instance_type    = "t3.micro"
 app_desired_capacity = 1
