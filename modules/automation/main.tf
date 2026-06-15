@@ -197,6 +197,56 @@ resource "aws_cloudwatch_event_target" "security_group_changes" {
   arn       = aws_sns_topic.alerts.arn
 }
 
+resource "aws_cloudwatch_event_rule" "kms_risk_events" {
+  name        = "${var.name_prefix}-kms-risk-events"
+  description = "High-risk KMS API calls captured from CloudTrail events"
+
+  event_pattern = jsonencode({
+    source      = ["aws.kms"]
+    detail-type = ["AWS API Call via CloudTrail"]
+    detail = {
+      eventSource = ["kms.amazonaws.com"]
+      eventName = [
+        "DisableKey",
+        "ScheduleKeyDeletion",
+        "PutKeyPolicy",
+        "DisableKeyRotation"
+      ]
+    }
+  })
+}
+
+resource "aws_cloudwatch_event_target" "kms_risk_events" {
+  rule      = aws_cloudwatch_event_rule.kms_risk_events.name
+  target_id = "kms-risk-events-sns"
+  arn       = aws_sns_topic.alerts.arn
+}
+
+resource "aws_cloudwatch_event_rule" "secrets_manager_risk_events" {
+  name        = "${var.name_prefix}-secrets-manager-risk-events"
+  description = "High-risk Secrets Manager API calls captured from CloudTrail events"
+
+  event_pattern = jsonencode({
+    source      = ["aws.secretsmanager"]
+    detail-type = ["AWS API Call via CloudTrail"]
+    detail = {
+      eventSource = ["secretsmanager.amazonaws.com"]
+      eventName = [
+        "DeleteSecret",
+        "UpdateSecret",
+        "PutSecretValue",
+        "GetSecretValue"
+      ]
+    }
+  })
+}
+
+resource "aws_cloudwatch_event_target" "secrets_manager_risk_events" {
+  rule      = aws_cloudwatch_event_rule.secrets_manager_risk_events.name
+  target_id = "secrets-manager-risk-events-sns"
+  arn       = aws_sns_topic.alerts.arn
+}
+
 data "archive_file" "audit_report" {
   type        = "zip"
   source_file = "${path.module}/lambda_src/audit_report.js"
