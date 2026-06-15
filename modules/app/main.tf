@@ -347,6 +347,7 @@ resource "terraform_data" "cloudfront_viewer_mtls_apply" {
 
   triggers_replace = [
     aws_cloudfront_distribution.app.id,
+    local.cloudfront_managed_config_hash,
     aws_s3_object.cloudfront_viewer_mtls_ca_bundle[0].etag,
     try(aws_s3_object.cloudfront_viewer_mtls_ca_bundle[0].version_id, ""),
     var.cloudfront_viewer_mtls_mode,

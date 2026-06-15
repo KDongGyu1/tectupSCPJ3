@@ -16,4 +16,15 @@ locals {
     63
   ))
   cloudfront_viewer_mtls_trust_store_name = var.cloudfront_viewer_mtls_trust_store_name != "" ? var.cloudfront_viewer_mtls_trust_store_name : "${var.name_prefix}-viewer-mtls"
+  cloudfront_managed_config_hash = sha1(jsonencode({
+    aliases                  = local.cloudfront_custom_certificate ? var.cloudfront_aliases : []
+    certificate_arn          = local.cloudfront_custom_certificate ? var.cloudfront_acm_certificate_arn : ""
+    enable_connection_logs   = var.enable_cloudfront_connection_logs
+    enable_standard_logs     = var.enable_cloudfront_standard_logs
+    minimum_protocol_version = "TLSv1.2_2021"
+    origin_domain_name       = local.cloudfront_origin_domain_name
+    origin_protocol_policy   = local.cloudfront_origin_protocol_policy
+    standard_logs_bucket     = var.enable_cloudfront_standard_logs ? try(aws_s3_bucket.cloudfront_logs[0].bucket_domain_name, "") : ""
+    viewer_protocol_policy   = "redirect-to-https"
+  }))
 }
