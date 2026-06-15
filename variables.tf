@@ -126,6 +126,10 @@ variable "cloudfront_origin_domain_name" {
 
 variable "enable_cloudfront_standard_logs" {
   description = "Store CloudFront standard access logs in a dedicated S3 bucket."
+  type        = bool
+  default     = true
+}
+
 variable "enable_cloudfront_viewer_mtls" {
   description = "Require or request client certificates at the CloudFront viewer edge using a CloudFront trust store."
   type        = bool
