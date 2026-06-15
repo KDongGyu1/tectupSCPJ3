@@ -180,6 +180,181 @@ resource "aws_cloudfront_distribution" "app" {
   depends_on = [aws_s3_bucket_acl.cloudfront_logs]
 }
 
+resource "aws_s3_bucket" "cloudfront_viewer_mtls" {
+  count = var.enable_cloudfront_viewer_mtls ? 1 : 0
+
+  bucket        = local.cloudfront_viewer_mtls_bucket_name
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "cloudfront_viewer_mtls" {
+  count = var.enable_cloudfront_viewer_mtls ? 1 : 0
+
+  bucket                  = aws_s3_bucket.cloudfront_viewer_mtls[0].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "cloudfront_viewer_mtls" {
+  count = var.enable_cloudfront_viewer_mtls ? 1 : 0
+
+  bucket = aws_s3_bucket.cloudfront_viewer_mtls[0].id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "cloudfront_viewer_mtls" {
+  count = var.enable_cloudfront_viewer_mtls ? 1 : 0
+
+  bucket = aws_s3_bucket.cloudfront_viewer_mtls[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+data "aws_iam_policy_document" "cloudfront_viewer_mtls" {
+  count = var.enable_cloudfront_viewer_mtls ? 1 : 0
+
+  statement {
+    sid = "AllowCloudFrontTrustStoreRead"
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+    ]
+
+    resources = [
+      "${aws_s3_bucket.cloudfront_viewer_mtls[0].arn}/${var.cloudfront_viewer_mtls_ca_bundle_s3_key}",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [var.account_id]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "cloudfront_viewer_mtls" {
+  count = var.enable_cloudfront_viewer_mtls ? 1 : 0
+
+  bucket = aws_s3_bucket.cloudfront_viewer_mtls[0].id
+  policy = data.aws_iam_policy_document.cloudfront_viewer_mtls[0].json
+}
+
+resource "aws_s3_object" "cloudfront_viewer_mtls_ca_bundle" {
+  count = var.enable_cloudfront_viewer_mtls ? 1 : 0
+
+  bucket       = aws_s3_bucket.cloudfront_viewer_mtls[0].id
+  key          = var.cloudfront_viewer_mtls_ca_bundle_s3_key
+  source       = var.cloudfront_viewer_mtls_ca_bundle_path
+  etag         = filemd5(var.cloudfront_viewer_mtls_ca_bundle_path)
+  content_type = "application/x-pem-file"
+
+  depends_on = [
+    aws_s3_bucket_public_access_block.cloudfront_viewer_mtls,
+    aws_s3_bucket_versioning.cloudfront_viewer_mtls,
+    aws_s3_bucket_server_side_encryption_configuration.cloudfront_viewer_mtls,
+    aws_s3_bucket_policy.cloudfront_viewer_mtls,
+  ]
+}
+
+resource "terraform_data" "cloudfront_viewer_mtls_apply" {
+  count = var.enable_cloudfront_viewer_mtls ? 1 : 0
+
+  input = {
+    advertise_ca_names = tostring(var.cloudfront_viewer_mtls_advertise_ca_names)
+    aws_profile        = var.cloudfront_viewer_mtls_aws_profile
+    ca_bundle_bucket   = aws_s3_bucket.cloudfront_viewer_mtls[0].bucket
+    ca_bundle_key      = aws_s3_object.cloudfront_viewer_mtls_ca_bundle[0].key
+    ca_bundle_region   = var.aws_region
+    ca_bundle_version  = try(aws_s3_object.cloudfront_viewer_mtls_ca_bundle[0].version_id, "")
+    distribution_id    = aws_cloudfront_distribution.app.id
+    ignore_certificate_expiry = tostring(
+      var.cloudfront_viewer_mtls_ignore_certificate_expiry
+    )
+    mode             = var.cloudfront_viewer_mtls_mode
+    script_path      = "${path.root}/scripts/cloudfront-viewer-mtls.sh"
+    trust_store_name = local.cloudfront_viewer_mtls_trust_store_name
+  }
+
+  triggers_replace = [
+    aws_cloudfront_distribution.app.id,
+    aws_s3_object.cloudfront_viewer_mtls_ca_bundle[0].etag,
+    try(aws_s3_object.cloudfront_viewer_mtls_ca_bundle[0].version_id, ""),
+    var.cloudfront_viewer_mtls_mode,
+    tostring(var.cloudfront_viewer_mtls_advertise_ca_names),
+    tostring(var.cloudfront_viewer_mtls_ignore_certificate_expiry),
+  ]
+
+  provisioner "local-exec" {
+    command = "${self.input.script_path} apply"
+
+    environment = {
+      ADVERTISE_CA_NAMES        = self.input.advertise_ca_names
+      AWS_PROFILE               = self.input.aws_profile
+      CA_BUNDLE_BUCKET          = self.input.ca_bundle_bucket
+      CA_BUNDLE_KEY             = self.input.ca_bundle_key
+      CA_BUNDLE_REGION          = self.input.ca_bundle_region
+      CA_BUNDLE_VERSION         = self.input.ca_bundle_version
+      DISTRIBUTION_ID           = self.input.distribution_id
+      IGNORE_CERTIFICATE_EXPIRY = self.input.ignore_certificate_expiry
+      TRUST_STORE_NAME          = self.input.trust_store_name
+      VIEWER_MTLS_MODE          = self.input.mode
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = local.cloudfront_custom_certificate
+      error_message = "CloudFront viewer mTLS requires cloudfront_aliases and cloudfront_acm_certificate_arn."
+    }
+  }
+
+  depends_on = [
+    aws_cloudfront_distribution.app,
+    aws_s3_object.cloudfront_viewer_mtls_ca_bundle,
+  ]
+}
+
+resource "terraform_data" "cloudfront_viewer_mtls_cleanup" {
+  count = var.enable_cloudfront_viewer_mtls ? 1 : 0
+
+  input = {
+    aws_profile      = var.cloudfront_viewer_mtls_aws_profile
+    distribution_id  = aws_cloudfront_distribution.app.id
+    script_path      = "${path.root}/scripts/cloudfront-viewer-mtls.sh"
+    trust_store_name = local.cloudfront_viewer_mtls_trust_store_name
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "${self.input.script_path} destroy"
+
+    environment = {
+      AWS_PROFILE      = self.input.aws_profile
+      DISTRIBUTION_ID  = self.input.distribution_id
+      TRUST_STORE_NAME = self.input.trust_store_name
+    }
+  }
+
+  depends_on = [
+    terraform_data.cloudfront_viewer_mtls_apply,
+  ]
+}
+
 resource "aws_lb_target_group" "app" {
   for_each = local.app_services
 

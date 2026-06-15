@@ -11,6 +11,10 @@
 
 *.tfstate
 *.tfstate.*
+
+# Local mTLS material. Do not commit private keys or generated certs.
+certs/mtls/*
+!certs/mtls/.gitkeep
 *.tfvars
 *.tfvars.json
 !*.tfvars.example

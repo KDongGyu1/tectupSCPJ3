@@ -12,7 +12,7 @@
 | 김동규 | ALB | `describe-load-balancers`, `curl /health` | ALB active, health 200 |  |  |  |
 | 한경윤 | Audit/Monitoring | CloudTrail/EventBridge/SNS evidence | 탐지 및 알림 기준 충족 |  |  |  |
 | 임지혁 | Data Protection | RDS/KMS/Secrets evidence | 암호화 및 secret 관리 기준 충족 |  |  |  |
-| 윤정우 | Network Control / HTTPS | SG/WAF/VPCE evidence, CloudFront/ALB/ACM HTTPS evidence | 외부 접근통제와 전송보안 기준 충족 |  |  |  |
+| 윤정우 | Network Control / HTTPS / mTLS | SG/WAF/VPCE evidence, CloudFront/ALB/ACM HTTPS evidence, mTLS candidate evidence | 외부 접근통제, 전송보안, mTLS 적용 구간 검토 기준 충족 |  |  |  |
 
 ## PM Review Checklist
 

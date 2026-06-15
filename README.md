@@ -237,9 +237,13 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 | `cloudfront_origin_domain_name` | `""` | CloudFront가 ALB Origin에 HTTPS로 접속할 때 사용할 Origin DNS 이름 |
 | `cloudfront_aliases` | `[]` | CloudFront에 연결할 커스텀 도메인 목록 |
 | `cloudfront_acm_certificate_arn` | `""` | CloudFront 커스텀 도메인에 사용할 us-east-1 ACM 인증서 ARN |
+| `enable_cloudfront_viewer_mtls` | `false` | Client -> CloudFront 구간에서 Viewer mTLS 활성화 |
+| `cloudfront_viewer_mtls_mode` | `"required"` | 클라이언트 인증서 요구 모드. `required` 또는 `optional` |
+| `cloudfront_viewer_mtls_ca_bundle_path` | `"certs/mtls/client-ca-bundle.pem"` | CloudFront Trust Store에 업로드할 CA bundle 경로 |
 | `enable_interface_endpoint_policy_restrictions` | `false` | Interface Endpoint 정책을 서비스별 허용 Action으로 제한 |
 
 CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-east-1`에 생성해야 합니다. CloudFront -> ALB 구간을 HTTPS로 전환하는 경우 ALB 인증서의 도메인과 CloudFront Origin Domain Name이 일치해야 하므로, `origin.example.com` 같은 별도 CNAME을 ALB DNS 이름으로 연결한 뒤 `cloudfront_origin_domain_name`에 설정합니다.
+Client -> CloudFront mTLS를 켜려면 `./scripts/generate-viewer-mtls-certs.sh`로 로컬 테스트 CA와 클라이언트 인증서를 만들고, `enable_cloudfront_viewer_mtls = true`를 설정합니다.
 
 ## 4. 디렉터리 구조
 
@@ -253,6 +257,12 @@ CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-ea
 ├── moved.tf
 ├── backend-dev.hcl
 ├── terraform.tfvars.example
+├── certs/
+│   └── mtls/
+│       └── .gitkeep
+├── scripts/
+│   ├── cloudfront-viewer-mtls.sh
+│   └── generate-viewer-mtls-certs.sh
 ├── bootstrap/
 │   └── backend/
 │       └── main.tf
@@ -263,6 +273,7 @@ CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-ea
 │   ├── architecture.md
 │   ├── iam-role-specification.md
 │   ├── https-migration-owner-yunjeongwoo.md
+│   ├── mtls-network-owner-yunjeongwoo.md
 │   ├── network-access-control-compliance.md
 │   ├── network-transport-security.md
 │   ├── security-policy-matrix.md
@@ -294,6 +305,7 @@ CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-ea
 | `docs/security-policy-matrix.md` | 역할, 권한, 보안 정책 매핑 |
 | `docs/iam-role-specification.md` | IAM Role, AssumeRole, MFA 기반 접근 구조 설명 |
 | `docs/https-migration-owner-yunjeongwoo.md` | 윤정우 담당 CloudFront, ALB, ACM, DNS 기반 HTTPS 전환 설계와 증적 계획 |
+| `docs/mtls-network-owner-yunjeongwoo.md` | 윤정우 담당 mTLS 적용 후보 구간, 통신 경로, SG/포트 영향 검토 |
 | `docs/network-access-control-compliance.md` | Security Group, WAF, VPC Endpoint, ALB 우회 접근 점검 기준 |
 | `docs/network-transport-security.md` | 네트워크 전송보안 구현 상태와 심화 개선 후보 |
 | `docs/app-runtime-standards.md` | App 서버 런타임, 포트, health check, 운영 기준 |
@@ -430,10 +442,10 @@ terraform init -backend-config=backend-dev.hcl
 `backend-dev.hcl` 예시:
 
 ```hcl
-bucket       = "finpay-dev-tfstate-064137889010"
+bucket       = "finpay-dev-tfstate-233338945536"
 key          = "dev/terraform.tfstate"
 region       = "ap-northeast-2"
-profile      = "fintech"
+profile      = "default"
 encrypt      = true
 use_lockfile = true
 ```
@@ -449,6 +461,10 @@ use_lockfile = true
 | `app_subnet_ids` | App Subnet ID 목록 |
 | `db_subnet_ids` | DB Subnet ID 목록 |
 | `alb_dns_name` | ALB DNS 이름 |
+| `cloudfront_distribution_id` | CloudFront Distribution ID |
+| `cloudfront_distribution_domain_name` | CloudFront 기본 도메인 이름 |
+| `cloudfront_viewer_mtls_enabled` | Client -> CloudFront Viewer mTLS 활성화 여부 |
+| `cloudfront_viewer_mtls_trust_store_name` | CloudFront Viewer mTLS Trust Store 이름 |
 | `cognito_user_pool_id` | Cognito User Pool ID |
 | `cognito_web_client_id` | Cognito Web Client ID |
 | `rds_endpoint` | RDS Endpoint |

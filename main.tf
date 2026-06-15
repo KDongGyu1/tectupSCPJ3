@@ -66,6 +66,7 @@ module "app" {
   name_prefix                    = local.name_prefix
   account_id                     = data.aws_caller_identity.current.account_id
   environment                    = var.environment
+  account_id                     = data.aws_caller_identity.current.account_id
   aws_region                     = var.aws_region
   vpc_id                         = module.network.vpc_id
   public_subnet_ids              = module.network.public_subnet_ids
@@ -83,19 +84,29 @@ module "app" {
   cloudfront_aliases             = var.cloudfront_aliases
   cloudfront_acm_certificate_arn = var.cloudfront_acm_certificate_arn
   cloudfront_origin_domain_name  = var.cloudfront_origin_domain_name
-  app_instance_type              = var.app_instance_type
-  app_desired_capacity           = var.app_desired_capacity
-  app_min_size                   = var.app_min_size
-  app_max_size                   = var.app_max_size
-  cognito_user_pool_id           = module.auth.cognito_user_pool_id
-  cognito_web_client_id          = module.auth.cognito_web_client_id
-  cognito_hosted_ui_base_url     = module.auth.cognito_hosted_ui_base_url
-  app_base_url                   = var.app_base_url
-  rds_endpoint                   = module.data.rds_endpoint
-  rds_master_secret_arn          = module.data.rds_master_secret_arn
-  rds_sslmode                    = var.rds_sslmode
-  app_artifact_bucket            = "${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}"
-  app_artifact_key               = "tmp/server.py"
+  enable_cloudfront_viewer_mtls  = var.enable_cloudfront_viewer_mtls
+  cloudfront_viewer_mtls_mode    = var.cloudfront_viewer_mtls_mode
+  cloudfront_viewer_mtls_ca_bundle_path = abspath(
+    var.cloudfront_viewer_mtls_ca_bundle_path
+  )
+  cloudfront_viewer_mtls_ca_bundle_s3_key          = var.cloudfront_viewer_mtls_ca_bundle_s3_key
+  cloudfront_viewer_mtls_trust_store_name          = var.cloudfront_viewer_mtls_trust_store_name
+  cloudfront_viewer_mtls_advertise_ca_names        = var.cloudfront_viewer_mtls_advertise_ca_names
+  cloudfront_viewer_mtls_ignore_certificate_expiry = var.cloudfront_viewer_mtls_ignore_certificate_expiry
+  cloudfront_viewer_mtls_aws_profile               = var.aws_profile
+  app_instance_type                                = var.app_instance_type
+  app_desired_capacity                             = var.app_desired_capacity
+  app_min_size                                     = var.app_min_size
+  app_max_size                                     = var.app_max_size
+  cognito_user_pool_id                             = module.auth.cognito_user_pool_id
+  cognito_web_client_id                            = module.auth.cognito_web_client_id
+  cognito_hosted_ui_base_url                       = module.auth.cognito_hosted_ui_base_url
+  app_base_url                                     = var.app_base_url
+  rds_endpoint                                     = module.data.rds_endpoint
+  rds_master_secret_arn                            = module.data.rds_master_secret_arn
+  rds_sslmode                                      = var.rds_sslmode
+  app_artifact_bucket                              = "${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}"
+  app_artifact_key                                 = "tmp/server.py"
 
   enable_cloudfront_standard_logs = var.enable_cloudfront_standard_logs
 

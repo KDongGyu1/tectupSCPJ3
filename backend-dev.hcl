@@ -1,6 +1,6 @@
-bucket       = "finpay-dev-tfstate-064137889010"
+bucket       = "finpay-dev-tfstate-233338945536"
 key          = "dev/terraform.tfstate"
 region       = "ap-northeast-2"
-profile      = "fintech"
+profile      = "default"
 encrypt      = true
 use_lockfile = true
