@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import secrets
 import socket
 import time
 import uuid
@@ -678,6 +679,13 @@ def public_base_url(headers) -> str:
     return f"{proto}://{host}".rstrip("/")
 
 
+def is_secure_request(headers) -> bool:
+    forwarded_proto = headers.get("X-Forwarded-Proto", "").lower()
+    if forwarded_proto == "https":
+        return True
+    return public_base_url(headers).lower().startswith("https://")
+
+
 def cognito_redirect_uri(headers) -> str:
     return f"{public_base_url(headers)}/auth/callback"
 
@@ -831,6 +839,30 @@ class FinPayHandler(BaseHTTPRequestHandler):
     def version_string(self) -> str:
         return self.server_version
 
+    def do_HEAD(self) -> None:
+        path = urlparse(self.path).path
+        if path in ("/health", "/api/health"):
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_security_headers()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if path == "/login":
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_security_headers()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(HTTPStatus.METHOD_NOT_ALLOWED)
+        self.send_header("Allow", "GET, POST, HEAD")
+        self.send_security_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
@@ -933,12 +965,14 @@ class FinPayHandler(BaseHTTPRequestHandler):
                 self.send_html(self.login_page("로그인 처리 중 문제가 발생했습니다. 관리자에게 문의해 주세요."), HTTPStatus.BAD_REQUEST)
                 return
             sid = uuid.uuid4().hex
+            user["csrf_token"] = secrets.token_urlsafe(32)
             SESSIONS[sid] = user
             role = user["role"]
             add_event(user["email"], user["role"], "LOGIN", "Success", "서비스 로그인")
             self.send_response(HTTPStatus.SEE_OTHER)
             self.send_header("Location", "/dashboard")
-            self.send_header("Set-Cookie", f"finpay_session={sid}; HttpOnly; SameSite=Lax; Path=/")
+            self.send_header("Set-Cookie", self.session_cookie_header(sid))
+            self.send_security_headers()
             self.end_headers()
             return
 
@@ -999,6 +1033,9 @@ class FinPayHandler(BaseHTTPRequestHandler):
 
         if path == "/auth/logout":
             user = self.current_user()
+            if user and not self.valid_csrf_token(form):
+                self.reject_csrf(user)
+                return
             if user:
                 add_event(user["email"], user["role"], "LOGOUT", "Success", "로그아웃")
             self.send_response(HTTPStatus.SEE_OTHER)
@@ -1006,12 +1043,16 @@ class FinPayHandler(BaseHTTPRequestHandler):
                 "Location",
                 cognito_logout_url(self.headers) if user and user.get("auth_provider") == "cognito" and APP_CONFIG["cognito_hosted_ui_url"] else "/login",
             )
-            self.send_header("Set-Cookie", "finpay_session=; Max-Age=0; Path=/")
+            self.send_header("Set-Cookie", self.session_cookie_header("", max_age=0))
+            self.send_security_headers()
             self.end_headers()
             return
 
         user = self.require_login()
         if not user:
+            return
+        if not self.valid_csrf_token(form):
+            self.reject_csrf(user)
             return
 
         if path == "/payments":
@@ -1870,10 +1911,12 @@ class FinPayHandler(BaseHTTPRequestHandler):
             nav = f"<nav>{links}</nav>"
             userbar = f"""
             <form method="post" action="/auth/logout" class="userbar">
+              {self.csrf_input(user)}
               <span>{esc(user["name"])} · {esc(user["role"])}</span>
               <button type="submit" class="small">로그아웃</button>
             </form>
             """
+            body = self.inject_csrf_tokens(body, self.csrf_input(user))
 
         return f"""<!doctype html>
 <html lang="ko">
@@ -2003,16 +2046,64 @@ class FinPayHandler(BaseHTTPRequestHandler):
             return None
         return user
 
+    def csrf_token_for(self, user: dict) -> str:
+        token = user.get("csrf_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            user["csrf_token"] = token
+        return token
+
+    def csrf_input(self, user: dict) -> str:
+        return f'<input type="hidden" name="csrf_token" value="{esc(self.csrf_token_for(user))}">'
+
+    def inject_csrf_tokens(self, body: str, csrf_input: str) -> str:
+        def add_token(match: re.Match[str]) -> str:
+            form_tag = match.group(0)
+            if "csrf_token" in form_tag:
+                return form_tag
+            return f"{form_tag}\n                {csrf_input}"
+
+        return re.sub(r'<form\b(?=[^>]*method="post")[^>]*>', add_token, body, flags=re.IGNORECASE)
+
+    def valid_csrf_token(self, form: dict[str, list[str]]) -> bool:
+        user = self.current_user()
+        if not user:
+            return False
+        expected = self.csrf_token_for(user)
+        actual = form.get("csrf_token", [""])[0]
+        return bool(actual) and secrets.compare_digest(expected, actual)
+
+    def reject_csrf(self, user: dict) -> None:
+        add_event(user["email"], user["role"], "CSRF_VALIDATION", "Denied", "POST request CSRF token validation failed")
+        self.send_error_page(HTTPStatus.FORBIDDEN, "Request validation failed. Refresh the page and try again.")
+
     def read_form(self) -> dict[str, list[str]]:
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length).decode("utf-8")
         return parse_qs(raw)
+
+    def session_cookie_header(self, value: str, max_age: int | None = None) -> str:
+        parts = [f"finpay_session={value}", "HttpOnly", "SameSite=Lax", "Path=/"]
+        if max_age is not None:
+            parts.insert(1, f"Max-Age={max_age}")
+        if is_secure_request(self.headers):
+            parts.insert(-1, "Secure")
+        return "; ".join(parts)
+
+    def send_security_headers(self) -> None:
+        if is_secure_request(self.headers):
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'self'")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 
     def send_html(self, body: str, status: HTTPStatus = HTTPStatus.OK) -> None:
         payload = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        self.send_security_headers()
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
@@ -2022,6 +2113,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        self.send_security_headers()
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
@@ -2032,6 +2124,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/csv; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_security_headers()
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
@@ -2045,6 +2138,7 @@ class FinPayHandler(BaseHTTPRequestHandler):
     def redirect(self, location: str) -> None:
         self.send_response(HTTPStatus.SEE_OTHER)
         self.send_header("Location", location)
+        self.send_security_headers()
         self.end_headers()
 
     def log_message(self, format: str, *args: object) -> None:
