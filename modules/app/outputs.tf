@@ -10,6 +10,7 @@ output "cloudfront_origin_domain_name" { value = local.cloudfront_origin_domain_
 output "cloudfront_standard_logs_bucket" {
   value = var.enable_cloudfront_standard_logs ? aws_s3_bucket.cloudfront_logs[0].bucket : null
 }
+output "cloudfront_connection_logs_enabled" { value = var.enable_cloudfront_connection_logs }
 output "cloudfront_viewer_mtls_enabled" { value = var.enable_cloudfront_viewer_mtls }
 output "cloudfront_viewer_mtls_ca_bundle_bucket" { value = try(aws_s3_bucket.cloudfront_viewer_mtls[0].bucket, null) }
 output "cloudfront_viewer_mtls_trust_store_name" { value = var.enable_cloudfront_viewer_mtls ? local.cloudfront_viewer_mtls_trust_store_name : null }

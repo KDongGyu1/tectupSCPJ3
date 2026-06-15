@@ -130,6 +130,12 @@ variable "enable_cloudfront_standard_logs" {
   default     = true
 }
 
+variable "enable_cloudfront_connection_logs" {
+  description = "Store CloudFront viewer mTLS connection logs in the existing CloudFront log S3 bucket."
+  type        = bool
+  default     = false
+}
+
 variable "enable_cloudfront_viewer_mtls" {
   description = "Require or request client certificates at the CloudFront viewer edge using a CloudFront trust store."
   type        = bool
