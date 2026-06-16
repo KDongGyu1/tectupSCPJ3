@@ -28,8 +28,10 @@ resource "aws_iam_role_policy" "app_runtime" {
       {
         Effect = "Allow"
         Action = [
+          "kms:Encrypt",
           "kms:Decrypt",
           "kms:DescribeKey",
+          "kms:GenerateDataKey",
           "secretsmanager:GetSecretValue",
           "logs:DescribeLogStreams",
           "logs:CreateLogStream",

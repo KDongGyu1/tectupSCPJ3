@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import socket
+import ssl
 import time
 import uuid
 import base64
@@ -18,9 +19,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
+from column_crypto import encrypt_email, decrypt_email
 
 
 APP_PORT = int(os.environ.get("FINPAY_PORT", "8088"))
+APP_TLS_ENABLED = os.environ.get("FINPAY_TLS_ENABLED", "false").strip().lower() == "true"
+APP_TLS_CERT_FILE = os.environ.get("FINPAY_TLS_CERT_FILE", "")
+APP_TLS_KEY_FILE = os.environ.get("FINPAY_TLS_KEY_FILE", "")
 APP_ROOT = Path(__file__).resolve().parent
 DATA_PATH = APP_ROOT / "data" / "finpay-data.json"
 
@@ -422,11 +427,18 @@ def ensure_postgres_schema() -> None:
                 """
                 create table if not exists merchant_assignments (
                   email text not null,
+                  email_enc text,
                   merchant text not null,
                   primary key (email, merchant)
                 )
                 """
             )
+            cur.execute(
+                """
+                  alter table merchant_assignments
+                  add column if not exists email_enc text
+                """
+)
 
 
 def postgres_load_data() -> dict:
@@ -461,9 +473,12 @@ def postgres_load_data() -> dict:
                 }
                 for row in cur.fetchall()
             ]
-            cur.execute("select email, merchant from merchant_assignments order by email, merchant")
+            cur.execute("select email, email_enc, merchant from merchant_assignments order by email, merchant")
             merchant_assignments = [
-                {"email": row[0], "merchant": row[1]}
+                {
+                    "email": decrypt_email(row[1]) if row[1] else row[0],
+                    "merchant": row[2],
+                }
                 for row in cur.fetchall()
             ]
 
@@ -515,15 +530,19 @@ def postgres_save_data(data: dict) -> None:
                 )
             cur.execute("delete from merchant_assignments")
             for assignment in data["merchant_assignments"]:
-                cur.execute(
-                    """
-                    insert into merchant_assignments (email, merchant)
-                    values (%s, %s)
-                    on conflict do nothing
-                    """,
-                    (assignment["email"], assignment["merchant"]),
-                )
+                email = assignment["email"]
+                merchant = assignment["merchant"]
+                email_enc = encrypt_email(email)
 
+            cur.execute(
+                """
+                insert into merchant_assignments (email, email_enc, merchant)
+                values (%s, %s, %s)
+                on conflict (email, merchant) do update
+                set email_enc = excluded.email_enc
+                """,
+                (email, email_enc, merchant),
+    )
 
 def postgres_add_event(actor: str, role: str, action: str, result: str, detail: str) -> dict:
     ensure_postgres_schema()
@@ -2275,7 +2294,16 @@ pre { white-space: pre-wrap; background: #111827; color: #e6edf3; padding: 14px;
 def main() -> None:
     load_data()
     server = ThreadingHTTPServer(("0.0.0.0", APP_PORT), FinPayHandler)
-    print(f"FinPay Python app running at http://0.0.0.0:{APP_PORT}")
+    scheme = "http"
+    if APP_TLS_ENABLED:
+        if not APP_TLS_CERT_FILE or not APP_TLS_KEY_FILE:
+            raise RuntimeError("FINPAY_TLS_ENABLED=true requires FINPAY_TLS_CERT_FILE and FINPAY_TLS_KEY_FILE.")
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(certfile=APP_TLS_CERT_FILE, keyfile=APP_TLS_KEY_FILE)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        scheme = "https"
+    print(f"FinPay Python app running at {scheme}://0.0.0.0:{APP_PORT}")
     server.serve_forever()
 
 

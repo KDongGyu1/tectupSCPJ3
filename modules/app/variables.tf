@@ -14,10 +14,12 @@ variable "alb_certificate_arn" { type = string }
 variable "enable_https_listener" { type = bool }
 variable "enable_http_redirect" { type = bool }
 variable "enable_cloudfront_origin_https" { type = bool }
+variable "enable_alb_to_app_https" { type = bool }
 variable "cloudfront_aliases" { type = list(string) }
 variable "cloudfront_acm_certificate_arn" { type = string }
 variable "cloudfront_origin_domain_name" { type = string }
 variable "enable_cloudfront_standard_logs" { type = bool }
+variable "enable_cloudfront_connection_logs" { type = bool }
 variable "enable_cloudfront_viewer_mtls" { type = bool }
 variable "cloudfront_viewer_mtls_mode" { type = string }
 variable "cloudfront_viewer_mtls_ca_bundle_path" { type = string }
@@ -40,3 +42,14 @@ variable "rds_sslmode" { type = string }
 variable "aws_region" { type = string }
 variable "app_artifact_bucket" { type = string }
 variable "app_artifact_key" { type = string }
+
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      configuration_aliases = [
+        aws.global_events
+      ]
+    }
+  }
+}

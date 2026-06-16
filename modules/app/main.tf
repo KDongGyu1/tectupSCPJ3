@@ -86,6 +86,61 @@ resource "aws_s3_bucket_public_access_block" "cloudfront_logs" {
   restrict_public_buckets = true
 }
 
+data "aws_iam_policy_document" "cloudfront_connection_logs" {
+  count = var.enable_cloudfront_connection_logs && var.enable_cloudfront_standard_logs ? 1 : 0
+
+  statement {
+    sid = "AllowCloudFrontConnectionLogAclCheck"
+
+    principals {
+      type        = "Service"
+      identifiers = ["delivery.logs.amazonaws.com"]
+    }
+
+    actions   = ["s3:GetBucketAcl"]
+    resources = [aws_s3_bucket.cloudfront_logs[0].arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [var.account_id]
+    }
+  }
+
+  statement {
+    sid = "AllowCloudFrontConnectionLogWrite"
+
+    principals {
+      type        = "Service"
+      identifiers = ["delivery.logs.amazonaws.com"]
+    }
+
+    actions = ["s3:PutObject"]
+    resources = [
+      "${aws_s3_bucket.cloudfront_logs[0].arn}/AWSLogs/${var.account_id}/*",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [var.account_id]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-acl"
+      values   = ["bucket-owner-full-control"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "cloudfront_connection_logs" {
+  count = var.enable_cloudfront_connection_logs && var.enable_cloudfront_standard_logs ? 1 : 0
+
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+  policy = data.aws_iam_policy_document.cloudfront_connection_logs[0].json
+}
+
 resource "aws_cloudwatch_log_group" "app" {
   for_each          = local.app_services
   name              = "/finpay/${var.name_prefix}/${each.key}"
@@ -292,6 +347,7 @@ resource "terraform_data" "cloudfront_viewer_mtls_apply" {
 
   triggers_replace = [
     aws_cloudfront_distribution.app.id,
+    local.cloudfront_managed_config_hash,
     aws_s3_object.cloudfront_viewer_mtls_ca_bundle[0].etag,
     try(aws_s3_object.cloudfront_viewer_mtls_ca_bundle[0].version_id, ""),
     var.cloudfront_viewer_mtls_mode,
@@ -355,12 +411,61 @@ resource "terraform_data" "cloudfront_viewer_mtls_cleanup" {
   ]
 }
 
+resource "aws_cloudwatch_log_delivery_source" "cloudfront_connection" {
+  provider = aws.global_events
+  count    = var.enable_cloudfront_connection_logs ? 1 : 0
+
+  name         = "${var.name_prefix}-cloudfront-connection"
+  log_type     = "CONNECTION_LOGS"
+  resource_arn = aws_cloudfront_distribution.app.arn
+
+  lifecycle {
+    precondition {
+      condition     = var.enable_cloudfront_viewer_mtls
+      error_message = "CloudFront connection logs require enable_cloudfront_viewer_mtls = true."
+    }
+
+    precondition {
+      condition     = var.enable_cloudfront_standard_logs
+      error_message = "CloudFront connection logs reuse the standard log bucket, so enable_cloudfront_standard_logs must be true."
+    }
+  }
+
+  depends_on = [terraform_data.cloudfront_viewer_mtls_cleanup]
+}
+
+resource "aws_cloudwatch_log_delivery_destination" "cloudfront_connection_s3" {
+  provider = aws.global_events
+  count    = var.enable_cloudfront_connection_logs && var.enable_cloudfront_standard_logs ? 1 : 0
+
+  name          = "${var.name_prefix}-cloudfront-connection-s3"
+  output_format = "json"
+
+  delivery_destination_configuration {
+    destination_resource_arn = aws_s3_bucket.cloudfront_logs[0].arn
+  }
+}
+
+resource "aws_cloudwatch_log_delivery" "cloudfront_connection" {
+  provider = aws.global_events
+  count    = var.enable_cloudfront_connection_logs && var.enable_cloudfront_standard_logs ? 1 : 0
+
+  delivery_source_name     = aws_cloudwatch_log_delivery_source.cloudfront_connection[0].name
+  delivery_destination_arn = aws_cloudwatch_log_delivery_destination.cloudfront_connection_s3[0].arn
+
+  s3_delivery_configuration {
+    suffix_path = "connection"
+  }
+
+  depends_on = [aws_s3_bucket_policy.cloudfront_connection_logs]
+}
+
 resource "aws_lb_target_group" "app" {
   for_each = local.app_services
 
-  name        = "${var.name_prefix}-${each.key}-tg"
+  name        = var.enable_alb_to_app_https ? "${var.name_prefix}-${each.key}-https-tg" : "${var.name_prefix}-${each.key}-tg"
   port        = 8080
-  protocol    = "HTTP"
+  protocol    = local.app_target_protocol
   vpc_id      = var.vpc_id
   target_type = "instance"
 
@@ -371,9 +476,13 @@ resource "aws_lb_target_group" "app" {
     matcher             = "200"
     path                = "/health"
     port                = "traffic-port"
-    protocol            = "HTTP"
+    protocol            = local.app_target_protocol
     timeout             = 5
     unhealthy_threshold = 3
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -537,6 +646,7 @@ resource "aws_launch_template" "app" {
     rds_endpoint          = var.rds_endpoint
     rds_master_secret_arn = var.rds_master_secret_arn
     rds_sslmode           = var.rds_sslmode
+    app_tls_enabled       = tostring(var.enable_alb_to_app_https)
     app_artifact_bucket   = var.app_artifact_bucket
     app_artifact_key      = var.app_artifact_key
   }))
