@@ -85,6 +85,7 @@ module "app" {
   enable_https_listener          = var.enable_https_listener
   enable_http_redirect           = var.enable_http_redirect
   enable_cloudfront_origin_https = var.enable_cloudfront_origin_https
+  enable_alb_to_app_https        = var.enable_alb_to_app_https
   cloudfront_aliases             = var.cloudfront_aliases
   cloudfront_acm_certificate_arn = var.cloudfront_acm_certificate_arn
   cloudfront_origin_domain_name  = var.cloudfront_origin_domain_name

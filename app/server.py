@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import socket
+import ssl
 import time
 import uuid
 import base64
@@ -21,6 +22,9 @@ from urllib.request import Request, urlopen
 
 
 APP_PORT = int(os.environ.get("FINPAY_PORT", "8088"))
+APP_TLS_ENABLED = os.environ.get("FINPAY_TLS_ENABLED", "false").strip().lower() == "true"
+APP_TLS_CERT_FILE = os.environ.get("FINPAY_TLS_CERT_FILE", "")
+APP_TLS_KEY_FILE = os.environ.get("FINPAY_TLS_KEY_FILE", "")
 APP_ROOT = Path(__file__).resolve().parent
 DATA_PATH = APP_ROOT / "data" / "finpay-data.json"
 
@@ -2275,7 +2279,16 @@ pre { white-space: pre-wrap; background: #111827; color: #e6edf3; padding: 14px;
 def main() -> None:
     load_data()
     server = ThreadingHTTPServer(("0.0.0.0", APP_PORT), FinPayHandler)
-    print(f"FinPay Python app running at http://0.0.0.0:{APP_PORT}")
+    scheme = "http"
+    if APP_TLS_ENABLED:
+        if not APP_TLS_CERT_FILE or not APP_TLS_KEY_FILE:
+            raise RuntimeError("FINPAY_TLS_ENABLED=true requires FINPAY_TLS_CERT_FILE and FINPAY_TLS_KEY_FILE.")
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(certfile=APP_TLS_CERT_FILE, keyfile=APP_TLS_KEY_FILE)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        scheme = "https"
+    print(f"FinPay Python app running at {scheme}://0.0.0.0:{APP_PORT}")
     server.serve_forever()
 
 

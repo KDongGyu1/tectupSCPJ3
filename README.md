@@ -234,6 +234,7 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 | `enable_https_listener` | `false` | ACM 인증서가 있을 때 ALB HTTPS Listener 생성 |
 | `enable_http_redirect` | `false` | HTTPS Listener가 있을 때 ALB HTTP 80을 HTTPS로 리다이렉트 |
 | `enable_cloudfront_origin_https` | `false` | CloudFront에서 ALB Origin으로 HTTPS 사용 |
+| `enable_alb_to_app_https` | `false` | ALB Target Group에서 App EC2 인스턴스로 HTTPS 사용 |
 | `cloudfront_origin_domain_name` | `""` | CloudFront가 ALB Origin에 HTTPS로 접속할 때 사용할 Origin DNS 이름 |
 | `cloudfront_aliases` | `[]` | CloudFront에 연결할 커스텀 도메인 목록 |
 | `cloudfront_acm_certificate_arn` | `""` | CloudFront 커스텀 도메인에 사용할 us-east-1 ACM 인증서 ARN |
@@ -243,6 +244,7 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 | `enable_interface_endpoint_policy_restrictions` | `false` | Interface Endpoint 정책을 서비스별 허용 Action으로 제한 |
 
 CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-east-1`에 생성해야 합니다. CloudFront -> ALB 구간을 HTTPS로 전환하는 경우 ALB 인증서의 도메인과 CloudFront Origin Domain Name이 일치해야 하므로, `origin.example.com` 같은 별도 CNAME을 ALB DNS 이름으로 연결한 뒤 `cloudfront_origin_domain_name`에 설정합니다.
+ALB -> App 구간을 HTTPS로 전환하려면 `enable_alb_to_app_https = true`를 설정합니다. App 인스턴스는 부팅 시 로컬 서버 인증서를 생성하고 8080 포트에서 HTTPS로 요청을 받습니다.
 Client -> CloudFront mTLS를 켜려면 `./scripts/generate-viewer-mtls-certs.sh`로 로컬 테스트 CA와 클라이언트 인증서를 만들고, `enable_cloudfront_viewer_mtls = true`를 설정합니다.
 
 ## 4. 디렉터리 구조
@@ -421,6 +423,34 @@ terraform apply
 ```
 
 SNS 이메일 알림을 사용하는 경우, apply 이후 이메일로 도착하는 SNS 구독 확인 메일에서 **Confirm subscription**을 눌러야 실제 알림이 수신됩니다.
+
+### 7단계: App 코드 배포
+
+`app/server.py`를 수정한 경우 Terraform apply만으로 실행 중인 EC2에 코드가 반영되지 않습니다.
+App 인스턴스는 부팅 시 S3의 `tmp/server.py`를 내려받아 실행하므로, App 코드 변경 후에는 S3 업로드와 Auto Scaling instance refresh를 수행합니다.
+
+```bash
+./scripts/deploy-app.sh
+```
+
+기본값은 다음과 같습니다.
+
+| 항목 | 기본값 |
+| --- | --- |
+| AWS Region | `ap-northeast-2` |
+| Name Prefix | `finpay-dev` |
+| App Artifact Bucket | `finpay-dev-tfstate-<account-id>` |
+| App Artifact Key | `tmp/server.py` |
+| 대상 ASG | `finpay-dev-payment-asg`, `finpay-dev-auth-asg`, `finpay-dev-ops-asg` |
+
+다른 환경에 배포할 때는 환경변수로 덮어씁니다.
+
+```bash
+AWS_PROFILE=default \
+AWS_REGION=ap-northeast-2 \
+NAME_PREFIX=finpay-dev \
+./scripts/deploy-app.sh
+```
 
 ## 8. Backend Bootstrap
 

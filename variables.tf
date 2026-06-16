@@ -106,6 +106,12 @@ variable "enable_cloudfront_origin_https" {
   default     = false
 }
 
+variable "enable_alb_to_app_https" {
+  description = "Use HTTPS from the ALB target group to the EC2 app instances. The app instances generate a local TLS certificate at boot."
+  type        = bool
+  default     = false
+}
+
 variable "cloudfront_aliases" {
   description = "Optional custom domain aliases for the CloudFront distribution. Requires a us-east-1 ACM certificate."
   type        = list(string)
