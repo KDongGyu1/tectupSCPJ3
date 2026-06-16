@@ -358,9 +358,9 @@ resource "terraform_data" "cloudfront_viewer_mtls_cleanup" {
 resource "aws_lb_target_group" "app" {
   for_each = local.app_services
 
-  name        = "${var.name_prefix}-${each.key}-tg"
+  name        = var.enable_alb_to_app_https ? "${var.name_prefix}-${each.key}-https-tg" : "${var.name_prefix}-${each.key}-tg"
   port        = 8080
-  protocol    = "HTTP"
+  protocol    = local.app_target_protocol
   vpc_id      = var.vpc_id
   target_type = "instance"
 
@@ -371,9 +371,13 @@ resource "aws_lb_target_group" "app" {
     matcher             = "200"
     path                = "/health"
     port                = "traffic-port"
-    protocol            = "HTTP"
+    protocol            = local.app_target_protocol
     timeout             = 5
     unhealthy_threshold = 3
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -537,6 +541,7 @@ resource "aws_launch_template" "app" {
     rds_endpoint          = var.rds_endpoint
     rds_master_secret_arn = var.rds_master_secret_arn
     rds_sslmode           = var.rds_sslmode
+    app_tls_enabled       = tostring(var.enable_alb_to_app_https)
     app_artifact_bucket   = var.app_artifact_bucket
     app_artifact_key      = var.app_artifact_key
   }))

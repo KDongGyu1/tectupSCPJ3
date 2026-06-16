@@ -9,7 +9,7 @@
 | 사용자 -> CloudFront | CloudFront `viewer_protocol_policy = "redirect-to-https"`, 선택적 Viewer mTLS | HTTPS 리다이렉트 적용, mTLS 활성화 시 클라이언트 인증서 요구 | `modules/app/main.tf`, `scripts/cloudfront-viewer-mtls.sh` |
 | 사용자 -> ALB | ALB HTTP 80 listener는 기본 forward. HTTPS 443 listener는 `enable_https_listener`와 ACM ARN이 있을 때 생성 | HTTP 직접 접근 가능. HTTPS는 조건부 구현 | `modules/app/main.tf`, `variables.tf` |
 | CloudFront -> ALB | 기본값은 `http-only`. `enable_cloudfront_origin_https=true`, HTTPS listener, ALB ACM ARN, `cloudfront_origin_domain_name`이 준비되면 `https-only` | 조건부 HTTPS 전환 가능 | `modules/app/main.tf` |
-| ALB -> App | Target Group protocol `HTTP`, port `8080` | 내부 HTTP 구간. 심화 개선 후보 | `modules/app/main.tf` |
+| ALB -> App | 기본값은 Target Group protocol `HTTP`, port `8080`. `enable_alb_to_app_https=true`이면 Target Group과 Health Check를 `HTTPS`로 전환하고 App 인스턴스가 로컬 TLS 인증서로 HTTPS를 제공 | 조건부 HTTPS 전환 가능 | `modules/app/main.tf`, `modules/app/user_data.sh.tftpl`, `app/server.py` |
 | App -> RDS | App 환경변수 `RDS_SSLMODE` 기본값 `require` | PostgreSQL TLS 요구 옵션 반영 | `app/server.py`, `modules/app/user_data.sh.tftpl` |
 
 ## HTTPS Implementation Controls
@@ -20,6 +20,7 @@
 | `enable_https_listener` | `false` | ACM 인증서가 있을 때 ALB HTTPS 443 listener 생성을 허용한다. |
 | `enable_http_redirect` | `false` | HTTPS listener가 있을 때 ALB HTTP 80 요청을 HTTPS로 리다이렉트한다. |
 | `enable_cloudfront_origin_https` | `false` | HTTPS listener가 있을 때 CloudFront -> ALB 구간을 `https-only`로 전환한다. |
+| `enable_alb_to_app_https` | `false` | ALB -> App 구간을 HTTPS Target Group으로 전환한다. |
 | `cloudfront_origin_domain_name` | `""` | CloudFront Origin으로 사용할 ALB 별칭 도메인. ALB 인증서 SAN과 일치해야 한다. |
 | `cloudfront_aliases` | `[]` | 사용자 접속용 CloudFront 커스텀 도메인 목록. |
 | `cloudfront_acm_certificate_arn` | `""` | CloudFront 커스텀 도메인에 사용할 us-east-1 ACM 인증서 ARN. |
@@ -33,7 +34,7 @@
 | 후보 구간 | 적용 가능성 | 장점 | 구현 난이도 | 현재 프로젝트 판단 |
 | --- | --- | --- | --- | --- |
 | Client -> CloudFront | 가능 | 실제 사용자 진입점에서 클라이언트 인증서 검증 | 중간 | `enable_cloudfront_viewer_mtls=true`로 구현 가능. Terraform AWS provider가 아직 ViewerMtlsConfig를 직접 다루지 않아 AWS CLI 보조 스크립트를 사용한다. |
-| ALB -> App | 가능 | ALB와 App 사이의 서비스 신원 검증 강화 | 높음 | 현재 App은 단순 Python HTTP 서버와 ALB Target Group으로 구성되어 있어 바로 적용하지 않는다. ACM Private CA, Nginx/Envoy sidecar, 또는 ALB mutual authentication 지원 범위 검토가 필요하다. |
+| ALB -> App | 가능 | ALB와 App 사이의 전송 구간 암호화 | 중간 | `enable_alb_to_app_https=true`로 HTTPS Target Group을 사용한다. App 인스턴스는 로컬 서버 인증서로 TLS를 종료한다. 대상 인증서 신원 검증과 mTLS는 후속 과제로 분리한다. |
 | App -> 내부 서비스 | 가능 | 내부 API 호출 시 서비스 간 인증 강화 | 중간~높음 | 현재 내부 마이크로서비스 간 호출 구조가 코드상 명확하지 않으므로 설계 후보로 남긴다. 향후 service mesh 또는 sidecar TLS로 검토한다. |
 | 관리자 접근 구간 `/ops/*` | 가능 | 운영자 기능 접근에 강한 클라이언트 인증 추가 | 중간 | 현재 Cognito/RBAC 중심 구조이므로 mTLS는 추가 방어 계층으로 분류한다. CloudFront/ALB 앞단 인증서 기반 접근 통제 PoC가 필요하다. |
 
@@ -108,4 +109,4 @@ rg -n "RDS_SSLMODE|sslmode" app/server.py modules/app/user_data.sh.tftpl
 - 사용자 -> CloudFront HTTPS 리다이렉트는 구현되어 있고, 선택적으로 Viewer mTLS를 요구할 수 있다.
 - ALB HTTPS, ALB HTTP redirect, CloudFront -> ALB HTTPS는 ACM 인증서와 DNS 별칭이 있을 때 조건부로 활성화할 수 있다.
 - App -> RDS는 `RDS_SSLMODE=require` 기본값으로 TLS 요구 옵션을 반영했다.
-- ALB -> App mTLS와 내부 서비스 mTLS는 현재 구조에서는 설계 후보로 남긴다.
+- ALB -> App HTTPS는 `enable_alb_to_app_https=true`로 적용할 수 있다. ALB -> App mTLS와 내부 서비스 mTLS는 현재 구조에서는 설계 후보로 남긴다.

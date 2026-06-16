@@ -21,6 +21,8 @@ enable_https_listener    = false
 enable_http_redirect     = false
 # Requires enable_https_listener=true and an ACM certificate for the ALB origin.
 enable_cloudfront_origin_https = false
+# Uses HTTPS from ALB target groups to EC2 app instances.
+enable_alb_to_app_https = false
 cloudfront_origin_domain_name  = ""
 cloudfront_aliases             = []
 cloudfront_acm_certificate_arn = ""

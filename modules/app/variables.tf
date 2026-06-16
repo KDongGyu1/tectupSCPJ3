@@ -14,6 +14,7 @@ variable "alb_certificate_arn" { type = string }
 variable "enable_https_listener" { type = bool }
 variable "enable_http_redirect" { type = bool }
 variable "enable_cloudfront_origin_https" { type = bool }
+variable "enable_alb_to_app_https" { type = bool }
 variable "cloudfront_aliases" { type = list(string) }
 variable "cloudfront_acm_certificate_arn" { type = string }
 variable "cloudfront_origin_domain_name" { type = string }
