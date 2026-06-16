@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
-from column_crypto import encrypt_email, decrypt_email
+from column_crypto import encrypt_email, decrypt_email, hash_email
 
 
 APP_PORT = int(os.environ.get("FINPAY_PORT", "8088"))
@@ -423,22 +423,101 @@ def ensure_postgres_schema() -> None:
                 )
                 """
             )
+
             cur.execute(
                 """
                 create table if not exists merchant_assignments (
-                  email text not null,
-                  email_enc text,
+                  email_hash text not null,
+                  email_enc text not null,
                   merchant text not null,
-                  primary key (email, merchant)
+                  primary key (email_hash, merchant)
                 )
                 """
             )
+
             cur.execute(
                 """
-                  alter table merchant_assignments
-                  add column if not exists email_enc text
+                alter table merchant_assignments
+                add column if not exists email_hash text
                 """
-)
+            )
+
+            cur.execute(
+                """
+                alter table merchant_assignments
+                add column if not exists email_enc text
+                """
+            )
+
+            cur.execute(
+                """
+                select column_name
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'merchant_assignments'
+                  and column_name = 'email'
+                """
+            )
+            has_plain_email_column = cur.fetchone() is not None
+
+            if has_plain_email_column:
+                cur.execute(
+                    """
+                    select email, merchant
+                    from merchant_assignments
+                    where email is not null
+                    """
+                )
+
+                rows = cur.fetchall()
+
+                for email, merchant in rows:
+                    cur.execute(
+                        """
+                        update merchant_assignments
+                        set email_hash = %s,
+                            email_enc = %s
+                        where email = %s
+                          and merchant = %s
+                        """,
+                        (hash_email(email), encrypt_email(email), email, merchant),
+                    )
+
+                cur.execute(
+                    """
+                    alter table merchant_assignments
+                    drop constraint if exists merchant_assignments_pkey
+                    """
+                )
+
+                cur.execute(
+                    """
+                    alter table merchant_assignments
+                    alter column email_hash set not null
+                    """
+                )
+
+                cur.execute(
+                    """
+                    alter table merchant_assignments
+                    alter column email_enc set not null
+                    """
+                )
+
+                cur.execute(
+                    """
+                    alter table merchant_assignments
+                    add constraint merchant_assignments_pkey
+                    primary key (email_hash, merchant)
+                    """
+                )
+
+                cur.execute(
+                    """
+                    alter table merchant_assignments
+                    drop column if exists email
+                    """
+                )
 
 
 def postgres_load_data() -> dict:
@@ -473,11 +552,17 @@ def postgres_load_data() -> dict:
                 }
                 for row in cur.fetchall()
             ]
-            cur.execute("select email, email_enc, merchant from merchant_assignments order by email, merchant")
+            cur.execute(
+                """
+                select email_enc, merchant
+                from merchant_assignments
+                order by merchant, email_hash
+                """
+            )
             merchant_assignments = [
                 {
-                    "email": decrypt_email(row[1]) if row[1] else row[0],
-                    "merchant": row[2],
+                    "email": decrypt_email(row[0]),
+                    "merchant": row[1],
                 }
                 for row in cur.fetchall()
             ]
@@ -529,20 +614,20 @@ def postgres_save_data(data: dict) -> None:
                     (event["id"], event["time"], event["actor"], event["role"], event["action"], event["result"], event["detail"]),
                 )
             cur.execute("delete from merchant_assignments")
+
             for assignment in data["merchant_assignments"]:
                 email = assignment["email"]
                 merchant = assignment["merchant"]
-                email_enc = encrypt_email(email)
 
-            cur.execute(
-                """
-                insert into merchant_assignments (email, email_enc, merchant)
-                values (%s, %s, %s)
-                on conflict (email, merchant) do update
-                set email_enc = excluded.email_enc
-                """,
-                (email, email_enc, merchant),
-    )
+                cur.execute(
+                    """
+                    insert into merchant_assignments (email_hash, email_enc, merchant)
+                    values (%s, %s, %s)
+                    on conflict (email_hash, merchant) do update
+                    set email_enc = excluded.email_enc
+                    """,
+                    (hash_email(email), encrypt_email(email), merchant),
+                )
 
 def postgres_add_event(actor: str, role: str, action: str, result: str, detail: str) -> dict:
     ensure_postgres_schema()
