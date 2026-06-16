@@ -14,7 +14,13 @@ systemctl stop finpay.service 2>/dev/null || true
 systemctl disable finpay.service 2>/dev/null || true
 
 mkdir -p /opt/finpay-real
-aws s3 cp "s3://${app_artifact_bucket}/${app_artifact_key}" /opt/finpay-real/server.py --region "${aws_region}"
+rm -f /opt/finpay-real/*.py
+APP_ARTIFACT_PREFIX="$(dirname "${app_artifact_key}")"
+aws s3 cp "s3://${app_artifact_bucket}/$APP_ARTIFACT_PREFIX/" /opt/finpay-real/ \
+  --recursive \
+  --exclude "*" \
+  --include "*.py" \
+  --region "${aws_region}"
 
 if [ "${app_tls_enabled}" = "true" ]; then
   install -d -m 0750 -o root -g root /etc/finpay-real/tls
@@ -52,7 +58,7 @@ COGNITO_HOSTED_UI_URL=${cognito_hosted_ui_url}
 APP_BASE_URL=${app_base_url}
 CLOUDWATCH_LOG_GROUP=/finpay/${name_prefix}/${service_key}
 CLOUDWATCH_LOG_STREAM=${service_key}-asg
-PYTHONPATH=/opt/finpay-real/vendor
+PYTHONPATH=/opt/finpay-real:/opt/finpay-real/vendor
 ENV
 
 cat >/etc/systemd/system/finpay-real.service <<'UNIT'
