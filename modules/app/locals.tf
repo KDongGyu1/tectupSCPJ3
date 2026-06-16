@@ -21,6 +21,7 @@ locals {
     aliases                  = local.cloudfront_custom_certificate ? var.cloudfront_aliases : []
     certificate_arn          = local.cloudfront_custom_certificate ? var.cloudfront_acm_certificate_arn : ""
     enable_alb_to_app_https  = var.enable_alb_to_app_https
+    enable_connection_logs   = var.enable_cloudfront_connection_logs
     enable_standard_logs     = var.enable_cloudfront_standard_logs
     minimum_protocol_version = "TLSv1.2_2021"
     origin_domain_name       = local.cloudfront_origin_domain_name

@@ -63,6 +63,11 @@ module "logging" {
 module "app" {
   source = "./modules/app"
 
+  providers = {
+    aws               = aws
+    aws.global_events = aws.global_events
+  }
+
   name_prefix                    = local.name_prefix
   environment                    = var.environment
   account_id                     = data.aws_caller_identity.current.account_id
@@ -108,7 +113,8 @@ module "app" {
   app_artifact_bucket                              = "${local.name_prefix}-tfstate-${data.aws_caller_identity.current.account_id}"
   app_artifact_key                                 = "tmp/server.py"
 
-  enable_cloudfront_standard_logs = var.enable_cloudfront_standard_logs
+  enable_cloudfront_standard_logs   = var.enable_cloudfront_standard_logs
+  enable_cloudfront_connection_logs = var.enable_cloudfront_connection_logs
 
   depends_on = [module.logging, module.data]
 }

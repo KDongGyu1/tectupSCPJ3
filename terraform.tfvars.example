@@ -27,6 +27,7 @@ cloudfront_origin_domain_name  = ""
 cloudfront_aliases             = []
 cloudfront_acm_certificate_arn = ""
 enable_cloudfront_standard_logs = true
+enable_cloudfront_connection_logs = false
 
 # Viewer mTLS between clients and CloudFront. Generate local test material with:
 # ./scripts/generate-viewer-mtls-certs.sh
