@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
+from column_crypto import encrypt_email, decrypt_email
 
 
 APP_PORT = int(os.environ.get("FINPAY_PORT", "8088"))
@@ -426,11 +427,18 @@ def ensure_postgres_schema() -> None:
                 """
                 create table if not exists merchant_assignments (
                   email text not null,
+                  email_enc text,
                   merchant text not null,
                   primary key (email, merchant)
                 )
                 """
             )
+            cur.execute(
+                """
+                  alter table merchant_assignments
+                  add column if not exists email_enc text
+                """
+)
 
 
 def postgres_load_data() -> dict:
@@ -465,9 +473,12 @@ def postgres_load_data() -> dict:
                 }
                 for row in cur.fetchall()
             ]
-            cur.execute("select email, merchant from merchant_assignments order by email, merchant")
+            cur.execute("select email, email_enc, merchant from merchant_assignments order by email, merchant")
             merchant_assignments = [
-                {"email": row[0], "merchant": row[1]}
+                {
+                    "email": decrypt_email(row[1]) if row[1] else row[0],
+                    "merchant": row[2],
+                }
                 for row in cur.fetchall()
             ]
 
@@ -519,15 +530,19 @@ def postgres_save_data(data: dict) -> None:
                 )
             cur.execute("delete from merchant_assignments")
             for assignment in data["merchant_assignments"]:
-                cur.execute(
-                    """
-                    insert into merchant_assignments (email, merchant)
-                    values (%s, %s)
-                    on conflict do nothing
-                    """,
-                    (assignment["email"], assignment["merchant"]),
-                )
+                email = assignment["email"]
+                merchant = assignment["merchant"]
+                email_enc = encrypt_email(email)
 
+            cur.execute(
+                """
+                insert into merchant_assignments (email, email_enc, merchant)
+                values (%s, %s, %s)
+                on conflict (email, merchant) do update
+                set email_enc = excluded.email_enc
+                """,
+                (email, email_enc, merchant),
+    )
 
 def postgres_add_event(actor: str, role: str, action: str, result: str, detail: str) -> dict:
     ensure_postgres_schema()
