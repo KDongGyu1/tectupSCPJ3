@@ -55,7 +55,16 @@ enable_securityhub                          = false
 enable_aws_config                           = false
 rds_backup_retention_period                 = 1
 enable_log_object_lock                      = false
-log_object_lock_retention_days = 365
+log_object_lock_retention_days              = 365
+standard_cloudwatch_log_retention_days      = 365
+# CloudWatch Logs does not support 730 directly; 731 is the two-year retention value.
+audit_cloudwatch_log_retention_days                    = 731
+log_lifecycle_transition_ia_days                       = 90
+log_lifecycle_transition_glacier_days                  = 180
+alb_log_lifecycle_expiration_days                      = 365
+central_log_lifecycle_expiration_days                  = 730
+cloudfront_standard_log_lifecycle_expiration_days      = 365
+cloudfront_connection_log_lifecycle_expiration_days    = 730
 
 # Additional buckets allowed through the S3 Gateway Endpoint policy.
 # The app artifact bucket is automatically allowed by the root module.

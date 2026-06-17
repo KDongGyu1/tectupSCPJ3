@@ -336,3 +336,56 @@ variable "log_object_lock_retention_days" {
   type        = number
   default     = 365
 }
+
+variable "standard_cloudwatch_log_retention_days" {
+  description = "CloudWatch retention days for standard operational logs. CloudWatch supports fixed values; 365 satisfies the one-year baseline."
+  type        = number
+  default     = 365
+}
+
+variable "audit_cloudwatch_log_retention_days" {
+  description = "CloudWatch retention days for audit-sensitive logs. Use 731 for a two-year CloudWatch retention because 730 is not a supported CloudWatch value."
+  type        = number
+  default     = 731
+}
+
+variable "log_lifecycle_transition_ia_days" {
+  description = "Days before S3 log objects transition from Standard to Standard-IA."
+  type        = number
+  default     = 90
+}
+
+variable "log_lifecycle_transition_glacier_days" {
+  description = "Days before S3 log objects transition to Glacier Flexible Retrieval."
+  type        = number
+  default     = 180
+}
+
+variable "alb_log_lifecycle_expiration_days" {
+  description = "Days before ALB access log objects expire."
+  type        = number
+  default     = 365
+
+  validation {
+    condition     = contains([365, 730], var.alb_log_lifecycle_expiration_days)
+    error_message = "alb_log_lifecycle_expiration_days must be either 365 or 730."
+  }
+}
+
+variable "central_log_lifecycle_expiration_days" {
+  description = "Days before central S3 audit log objects expire. 730 days is the operating target for important audit evidence."
+  type        = number
+  default     = 730
+}
+
+variable "cloudfront_standard_log_lifecycle_expiration_days" {
+  description = "Days before CloudFront standard access log objects expire."
+  type        = number
+  default     = 365
+}
+
+variable "cloudfront_connection_log_lifecycle_expiration_days" {
+  description = "Days before CloudFront connection log objects expire. These logs include viewer mTLS authentication evidence."
+  type        = number
+  default     = 730
+}
