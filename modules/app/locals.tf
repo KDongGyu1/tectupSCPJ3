@@ -17,7 +17,7 @@ locals {
     63
   ))
   cloudfront_viewer_mtls_trust_store_name = var.cloudfront_viewer_mtls_trust_store_name != "" ? var.cloudfront_viewer_mtls_trust_store_name : "${var.name_prefix}-viewer-mtls"
-  cloudfront_managed_config_hash = sha1(jsonencode({
+  cloudfront_managed_config_hash = sha256(jsonencode({
     aliases                  = local.cloudfront_custom_certificate ? var.cloudfront_aliases : []
     certificate_arn          = local.cloudfront_custom_certificate ? var.cloudfront_acm_certificate_arn : ""
     enable_alb_to_app_https  = var.enable_alb_to_app_https
