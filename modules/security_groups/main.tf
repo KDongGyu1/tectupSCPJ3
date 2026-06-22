@@ -8,19 +8,20 @@ resource "aws_security_group" "alb" {
   description = "Public ALB ingress"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description = "HTTP from allowed CIDRs"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = var.enable_cloudfront_origin_only_alb_access ? [] : var.allowed_http_cidr_blocks
-    prefix_list_ids = var.enable_cloudfront_origin_only_alb_access ? [
-      data.aws_ec2_managed_prefix_list.cloudfront_origin_facing[0].id
-    ] : []
+  dynamic "ingress" {
+    for_each = var.enable_cloudfront_origin_only_alb_access ? [] : [1]
+
+    content {
+      description = "HTTP from allowed CIDRs"
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_http_cidr_blocks
+    }
   }
 
   ingress {
-    description = "HTTPS from allowed CIDRs"
+    description = var.enable_cloudfront_origin_only_alb_access ? "HTTPS from CloudFront origin-facing" : "HTTPS from allowed CIDRs"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"

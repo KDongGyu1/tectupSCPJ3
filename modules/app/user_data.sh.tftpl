@@ -14,7 +14,11 @@ systemctl stop finpay.service 2>/dev/null || true
 systemctl disable finpay.service 2>/dev/null || true
 
 mkdir -p /opt/finpay-real
-aws s3 cp "s3://${app_artifact_bucket}/${app_artifact_key}" /opt/finpay-real/server.py --region "${aws_region}"
+aws s3api get-object \
+  --bucket "${app_artifact_bucket}" \
+  --key "${app_artifact_key}" \
+  /opt/finpay-real/server.py \
+  --region "${aws_region}"
 
 if [ "${app_tls_enabled}" = "true" ]; then
   install -d -m 0750 -o root -g root /etc/finpay-real/tls

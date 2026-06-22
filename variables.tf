@@ -71,7 +71,7 @@ variable "allowed_http_cidr_blocks" {
 }
 
 variable "enable_cloudfront_origin_only_alb_access" {
-  description = "Restrict ALB HTTP/HTTPS ingress to the AWS-managed CloudFront origin-facing prefix list."
+  description = "Restrict ALB ingress to the AWS-managed CloudFront origin-facing prefix list. When enabled, only HTTPS 443 is opened for CloudFront origins."
   type        = bool
   default     = false
 }
@@ -162,7 +162,7 @@ variable "cloudfront_viewer_mtls_mode" {
 variable "cloudfront_viewer_mtls_ca_bundle_path" {
   description = "Local path to the PEM CA bundle that CloudFront will trust for viewer client certificates."
   type        = string
-  default     = "certs/mtls/client-ca-bundle.pem"
+  default     = "certs/mtls/finpay-ca-bundle.pem"
 }
 
 variable "cloudfront_viewer_mtls_ca_bundle_s3_key" {
