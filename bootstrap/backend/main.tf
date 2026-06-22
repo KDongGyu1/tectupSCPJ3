@@ -11,7 +11,7 @@ terraform {
 
 provider "aws" {
   region  = "ap-northeast-2"
-  profile = "fintech"
+  profile = "LJH"
 }
 
 data "aws_caller_identity" "current" {}

@@ -230,7 +230,7 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 | `enable_aws_config` | `false` | AWS Config 및 Managed Rule 활성화 여부 |
 | `enable_alb_access_logs` | `false` | ALB Access Log 활성화 여부 |
 | `enable_log_object_lock` | `false` | S3 Object Lock 기본 보존 설정 활성화 여부 |
-| `enable_cloudfront_origin_only_alb_access` | `false` | ALB 직접 접근을 줄이기 위해 CloudFront origin-facing prefix list만 허용 |
+| `enable_cloudfront_origin_only_alb_access` | `false` | ALB 직접 접근을 줄이기 위해 HTTPS 443을 CloudFront origin-facing prefix list에만 허용 |
 | `enable_https_listener` | `false` | ACM 인증서가 있을 때 ALB HTTPS Listener 생성 |
 | `enable_http_redirect` | `false` | HTTPS Listener가 있을 때 ALB HTTP 80을 HTTPS로 리다이렉트 |
 | `enable_cloudfront_origin_https` | `false` | CloudFront에서 ALB Origin으로 HTTPS 사용 |
@@ -240,12 +240,12 @@ AWS Backup을 사용하여 RDS 백업 계획을 구성합니다.
 | `cloudfront_acm_certificate_arn` | `""` | CloudFront 커스텀 도메인에 사용할 us-east-1 ACM 인증서 ARN |
 | `enable_cloudfront_viewer_mtls` | `false` | Client -> CloudFront 구간에서 Viewer mTLS 활성화 |
 | `cloudfront_viewer_mtls_mode` | `"required"` | 클라이언트 인증서 요구 모드. `required` 또는 `optional` |
-| `cloudfront_viewer_mtls_ca_bundle_path` | `"certs/mtls/client-ca-bundle.pem"` | CloudFront Trust Store에 업로드할 CA bundle 경로 |
+| `cloudfront_viewer_mtls_ca_bundle_path` | `"certs/mtls/finpay-ca-bundle.pem"` | CloudFront Trust Store에 업로드할 CA bundle 경로 |
 | `enable_interface_endpoint_policy_restrictions` | `false` | Interface Endpoint 정책을 서비스별 허용 Action으로 제한 |
 
 CloudFront 커스텀 도메인을 사용할 때는 Viewer용 인증서를 `us-east-1`에 생성해야 합니다. CloudFront -> ALB 구간을 HTTPS로 전환하는 경우 ALB 인증서의 도메인과 CloudFront Origin Domain Name이 일치해야 하므로, `origin.example.com` 같은 별도 CNAME을 ALB DNS 이름으로 연결한 뒤 `cloudfront_origin_domain_name`에 설정합니다.
 ALB -> App 구간을 HTTPS로 전환하려면 `enable_alb_to_app_https = true`를 설정합니다. App 인스턴스는 부팅 시 로컬 서버 인증서를 생성하고 8080 포트에서 HTTPS로 요청을 받습니다.
-Client -> CloudFront mTLS를 켜려면 `./scripts/generate-viewer-mtls-certs.sh`로 로컬 테스트 CA와 클라이언트 인증서를 만들고, `enable_cloudfront_viewer_mtls = true`를 설정합니다.
+Client -> CloudFront mTLS를 켜려면 현재 FinPay PKI CA bundle인 `certs/mtls/finpay-ca-bundle.pem`을 Trust Store에 업로드하고, 해당 CA가 발급한 클라이언트 인증서를 브라우저 또는 curl에 등록합니다. 로컬 테스트용 CA가 필요한 경우 `./scripts/generate-viewer-mtls-certs.sh`로 `certs/mtls/client-ca-bundle.pem`과 테스트 클라이언트 인증서를 생성할 수 있습니다.
 
 ## 4. 디렉터리 구조
 
@@ -352,14 +352,14 @@ aws sts get-caller-identity
 특정 profile을 사용하는 경우:
 
 ```bash
-aws sts get-caller-identity --profile fintech
+aws sts get-caller-identity --profile LJH
 ```
 
 다른 계정의 Role을 Assume하는 경우 `terraform.tfvars.example`을 참고해 로컬 전용 변수 파일을 만들고 다음 값을 설정할 수 있습니다. 실제 변수 파일은 계정 정보와 환경값이 들어갈 수 있으므로 Git에 커밋하지 않습니다.
 
 ```hcl
-aws_profile              = "fintech"
-assume_role_arn          = "arn:aws:iam::123456789012:role/FintechTerraformRole"
+aws_profile              = "LJH"
+assume_role_arn          = ""
 assume_role_session_name = "finpay-terraform"
 ```
 
@@ -446,7 +446,7 @@ App 인스턴스는 부팅 시 S3의 `tmp/` prefix에서 Python 파일을 내려
 다른 환경에 배포할 때는 환경변수로 덮어씁니다.
 
 ```bash
-AWS_PROFILE=default \
+AWS_PROFILE=LJH \
 AWS_REGION=ap-northeast-2 \
 NAME_PREFIX=finpay-dev \
 ./scripts/deploy-app.sh
@@ -472,10 +472,10 @@ terraform init -backend-config=backend-dev.hcl
 `backend-dev.hcl` 예시:
 
 ```hcl
-bucket       = "finpay-dev-tfstate-233338945536"
+bucket       = "finpay-dev-tfstate-581586866411"
 key          = "dev/terraform.tfstate"
 region       = "ap-northeast-2"
-profile      = "default"
+profile      = "LJH"
 encrypt      = true
 use_lockfile = true
 ```
@@ -516,7 +516,7 @@ use_lockfile = true
 aws events describe-rule \
   --name finpay-dev-security-group-changes \
   --region ap-northeast-2 \
-  --profile fintech
+  --profile LJH
 ```
 
 ### 테스트용 규칙 추가
@@ -529,7 +529,7 @@ ALB_SG_ID=$(aws ec2 describe-security-groups \
   --query "SecurityGroups[0].GroupId" \
   --output text \
   --region ap-northeast-2 \
-  --profile fintech)
+  --profile LJH)
 ```
 
 테스트용 인바운드 규칙을 추가합니다.
@@ -541,7 +541,7 @@ aws ec2 authorize-security-group-ingress \
   --port 22 \
   --cidr 0.0.0.0/0 \
   --region ap-northeast-2 \
-  --profile fintech
+  --profile LJH
 ```
 
 이 작업은 `AuthorizeSecurityGroupIngress` 이벤트를 발생시킵니다.
@@ -555,7 +555,7 @@ aws ec2 revoke-security-group-ingress \
   --port 22 \
   --cidr 0.0.0.0/0 \
   --region ap-northeast-2 \
-  --profile fintech
+  --profile LJH
 ```
 
 이 작업은 `RevokeSecurityGroupIngress` 이벤트를 발생시킵니다.
@@ -570,7 +570,7 @@ aws ec2 describe-security-groups \
   --query 'SecurityGroups[*].{GroupName:GroupName,GroupId:GroupId,Ingress:IpPermissions,Egress:IpPermissionsEgress}' \
   --output json \
   --region ap-northeast-2 \
-  --profile fintech
+  --profile LJH
 ```
 
 ### SSH 공개 여부 확인
@@ -580,7 +580,7 @@ aws ec2 describe-security-groups \
   --query 'SecurityGroups[?IpPermissions[?FromPort==`22` && ToPort==`22`]].{GroupName:GroupName,GroupId:GroupId,Ingress:IpPermissions}' \
   --output table \
   --region ap-northeast-2 \
-  --profile fintech
+  --profile LJH
 ```
 
 ### Subnet Public IP 설정 확인
@@ -591,7 +591,7 @@ aws ec2 describe-subnets \
   --query 'Subnets[*].{Name:Tags[?Key==`Name`]|[0].Value,SubnetId:SubnetId,AZ:AvailabilityZone,MapPublicIpOnLaunch:MapPublicIpOnLaunch,Cidr:CidrBlock}' \
   --output table \
   --region ap-northeast-2 \
-  --profile fintech
+  --profile LJH
 ```
 
 ### Route Table 확인
@@ -602,7 +602,7 @@ aws ec2 describe-route-tables \
   --query 'RouteTables[*].{Name:Tags[?Key==`Name`]|[0].Value,RouteTableId:RouteTableId,Routes:Routes,Associations:Associations[*].SubnetId}' \
   --output json \
   --region ap-northeast-2 \
-  --profile fintech
+  --profile LJH
 ```
 
 ## 12. 전자금융 보안 관점 매핑

@@ -17,6 +17,8 @@ data "aws_canonical_user_id" "current" {}
 
 data "aws_cloudfront_log_delivery_canonical_user_id" "current" {}
 
+data "aws_partition" "current" {}
+
 resource "aws_s3_bucket" "cloudfront_logs" {
   count = var.enable_cloudfront_standard_logs ? 1 : 0
 
@@ -86,6 +88,58 @@ resource "aws_s3_bucket_public_access_block" "cloudfront_logs" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "cloudfront_logs" {
+  count = var.enable_cloudfront_standard_logs ? 1 : 0
+
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+
+  rule {
+    id     = "cloudfront-standard-log-retention"
+    status = "Enabled"
+
+    filter {
+      prefix = "standard/"
+    }
+
+    transition {
+      days          = var.log_lifecycle_transition_ia_days
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = var.log_lifecycle_transition_glacier_days
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = var.cloudfront_standard_log_lifecycle_expiration_days
+    }
+  }
+
+  rule {
+    id     = "cloudfront-connection-log-retention"
+    status = "Enabled"
+
+    filter {
+      prefix = "AWSLogs/${var.account_id}/"
+    }
+
+    transition {
+      days          = var.log_lifecycle_transition_ia_days
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = var.log_lifecycle_transition_glacier_days
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = var.cloudfront_connection_log_lifecycle_expiration_days
+    }
+  }
+}
+
 data "aws_iam_policy_document" "cloudfront_connection_logs" {
   count = var.enable_cloudfront_connection_logs && var.enable_cloudfront_standard_logs ? 1 : 0
 
@@ -140,11 +194,103 @@ resource "aws_s3_bucket_policy" "cloudfront_connection_logs" {
   bucket = aws_s3_bucket.cloudfront_logs[0].id
   policy = data.aws_iam_policy_document.cloudfront_connection_logs[0].json
 }
+resource "aws_s3_bucket" "alb_logs" {
+  count = var.enable_alb_access_logs ? 1 : 0
+
+  bucket        = "${var.name_prefix}-alb-logs-${var.account_id}"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  count = var.enable_alb_access_logs ? 1 : 0
+
+  bucket                  = aws_s3_bucket.alb_logs[0].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  count = var.enable_alb_access_logs ? 1 : 0
+
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
+  count = var.enable_alb_access_logs ? 1 : 0
+
+  bucket = aws_s3_bucket.alb_logs[0].id
+
+  rule {
+    id     = "alb-log-retention"
+    status = "Enabled"
+
+    filter {
+      prefix = "alb/"
+    }
+
+    transition {
+      days          = var.log_lifecycle_transition_ia_days
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = var.log_lifecycle_transition_glacier_days
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = var.alb_log_lifecycle_expiration_days
+    }
+  }
+}
+data "aws_iam_policy_document" "alb_logs" {
+  count = var.enable_alb_access_logs ? 1 : 0
+
+  statement {
+    sid = "AllowAlbLogDeliveryWrite"
+
+    principals {
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
+    }
+
+    actions = ["s3:PutObject"]
+
+    resources = [
+      "${aws_s3_bucket.alb_logs[0].arn}/alb/AWSLogs/${var.account_id}/*",
+    ]
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values = [
+        "arn:${data.aws_partition.current.partition}:elasticloadbalancing:${var.aws_region}:${var.account_id}:loadbalancer/*",
+      ]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  count = var.enable_alb_access_logs ? 1 : 0
+
+  bucket = aws_s3_bucket.alb_logs[0].id
+  policy = data.aws_iam_policy_document.alb_logs[0].json
+
+  depends_on = [aws_s3_bucket_public_access_block.alb_logs]
+}
 
 resource "aws_cloudwatch_log_group" "app" {
   for_each          = local.app_services
   name              = "/finpay/${var.name_prefix}/${each.key}"
-  retention_in_days = 365
+  retention_in_days = var.app_cloudwatch_log_retention_days
   kms_key_id        = var.logs_kms_key_arn
 }
 
@@ -163,12 +309,17 @@ resource "aws_lb" "app" {
     for_each = var.enable_alb_access_logs ? [1] : []
 
     content {
-      bucket  = var.central_logs_bucket
+      bucket  = aws_s3_bucket.alb_logs[0].bucket
       prefix  = "alb"
       enabled = true
     }
   }
-
+  depends_on = [
+    aws_s3_bucket_lifecycle_configuration.alb_logs,
+    aws_s3_bucket_policy.alb_logs,
+    aws_s3_bucket_public_access_block.alb_logs,
+    aws_s3_bucket_server_side_encryption_configuration.alb_logs,
+  ]
 }
 
 resource "aws_cloudfront_distribution" "app" {

@@ -58,6 +58,15 @@ module "logging" {
   logs_kms_key_arn               = module.kms.logs_kms_key_arn
   enable_log_object_lock         = var.enable_log_object_lock
   log_object_lock_retention_days = var.log_object_lock_retention_days
+  standard_cloudwatch_log_retention_days = (
+    var.standard_cloudwatch_log_retention_days
+  )
+  audit_cloudwatch_log_retention_days = (
+    var.audit_cloudwatch_log_retention_days
+  )
+  log_lifecycle_transition_ia_days      = var.log_lifecycle_transition_ia_days
+  log_lifecycle_transition_glacier_days = var.log_lifecycle_transition_glacier_days
+  central_log_lifecycle_expiration_days = var.central_log_lifecycle_expiration_days
 }
 
 module "app" {
@@ -115,6 +124,18 @@ module "app" {
 
   enable_cloudfront_standard_logs   = var.enable_cloudfront_standard_logs
   enable_cloudfront_connection_logs = var.enable_cloudfront_connection_logs
+  app_cloudwatch_log_retention_days = var.audit_cloudwatch_log_retention_days
+  log_lifecycle_transition_ia_days  = var.log_lifecycle_transition_ia_days
+  alb_log_lifecycle_expiration_days = var.alb_log_lifecycle_expiration_days
+  log_lifecycle_transition_glacier_days = (
+    var.log_lifecycle_transition_glacier_days
+  )
+  cloudfront_standard_log_lifecycle_expiration_days = (
+    var.cloudfront_standard_log_lifecycle_expiration_days
+  )
+  cloudfront_connection_log_lifecycle_expiration_days = (
+    var.cloudfront_connection_log_lifecycle_expiration_days
+  )
 
   depends_on = [module.logging, module.data]
 }

@@ -3,7 +3,7 @@ environment  = "dev"
 aws_region   = "ap-northeast-2"
 
 # Optional: use these when applying to another AWS account through an assumed role.
-aws_profile              = ""
+aws_profile              = "LJH"
 assume_role_arn          = ""
 assume_role_session_name = "finpay-terraform"
 
@@ -29,11 +29,12 @@ cloudfront_acm_certificate_arn = ""
 enable_cloudfront_standard_logs = true
 enable_cloudfront_connection_logs = false
 
-# Viewer mTLS between clients and CloudFront. Generate local test material with:
-# ./scripts/generate-viewer-mtls-certs.sh
+# Viewer mTLS between clients and CloudFront.
+# Use certs/mtls/finpay-ca-bundle.pem for the current FinPay PKI bundle.
+# The helper script generates certs/mtls/client-ca-bundle.pem for local test material.
 enable_cloudfront_viewer_mtls                    = false
 cloudfront_viewer_mtls_mode                      = "required"
-cloudfront_viewer_mtls_ca_bundle_path            = "certs/mtls/client-ca-bundle.pem"
+cloudfront_viewer_mtls_ca_bundle_path            = "certs/mtls/finpay-ca-bundle.pem"
 cloudfront_viewer_mtls_ca_bundle_s3_key          = "cloudfront-viewer-mtls/client-ca-bundle.pem"
 cloudfront_viewer_mtls_trust_store_name          = ""
 cloudfront_viewer_mtls_advertise_ca_names        = true
@@ -55,7 +56,16 @@ enable_securityhub                          = false
 enable_aws_config                           = false
 rds_backup_retention_period                 = 1
 enable_log_object_lock                      = false
-log_object_lock_retention_days = 365
+log_object_lock_retention_days              = 365
+standard_cloudwatch_log_retention_days      = 365
+# CloudWatch Logs does not support 730 directly; 731 is the two-year retention value.
+audit_cloudwatch_log_retention_days                    = 731
+log_lifecycle_transition_ia_days                       = 90
+log_lifecycle_transition_glacier_days                  = 180
+alb_log_lifecycle_expiration_days                      = 365
+central_log_lifecycle_expiration_days                  = 730
+cloudfront_standard_log_lifecycle_expiration_days      = 365
+cloudfront_connection_log_lifecycle_expiration_days    = 730
 
 # Additional buckets allowed through the S3 Gateway Endpoint policy.
 # The app artifact bucket is automatically allowed by the root module.
