@@ -8,6 +8,7 @@ AWS_REGION="${AWS_REGION:-ap-northeast-2}"
 AWS_PROFILE="${AWS_PROFILE:-}"
 NAME_PREFIX="${NAME_PREFIX:-finpay-dev}"
 APP_ARTIFACT_KEY="${APP_ARTIFACT_KEY:-tmp/server.py}"
+APP_ARTIFACT_PREFIX="${APP_ARTIFACT_PREFIX:-$(dirname "$APP_ARTIFACT_KEY")}"
 MIN_HEALTHY_PERCENTAGE="${MIN_HEALTHY_PERCENTAGE:-0}"
 INSTANCE_WARMUP="${INSTANCE_WARMUP:-60}"
 WAIT_FOR_REFRESH="${WAIT_FOR_REFRESH:-true}"
@@ -24,14 +25,18 @@ if [[ ! -f app/server.py ]]; then
   exit 1
 fi
 
-echo "Validating app/server.py..."
-python3 -m py_compile app/server.py
+echo "Validating app Python files..."
+python3 -m py_compile app/*.py
 
 ACCOUNT_ID="$(aws sts get-caller-identity "${AWS_ARGS[@]}" --query Account --output text)"
 APP_ARTIFACT_BUCKET="${APP_ARTIFACT_BUCKET:-${NAME_PREFIX}-tfstate-${ACCOUNT_ID}}"
 
-echo "Uploading app/server.py to s3://${APP_ARTIFACT_BUCKET}/${APP_ARTIFACT_KEY}..."
-aws s3 cp app/server.py "s3://${APP_ARTIFACT_BUCKET}/${APP_ARTIFACT_KEY}" "${AWS_ARGS[@]}"
+echo "Uploading app Python files to s3://${APP_ARTIFACT_BUCKET}/${APP_ARTIFACT_PREFIX}/..."
+aws s3 cp app/ "s3://${APP_ARTIFACT_BUCKET}/${APP_ARTIFACT_PREFIX}/" \
+  "${AWS_ARGS[@]}" \
+  --recursive \
+  --exclude "*" \
+  --include "*.py"
 
 ASG_NAMES=(
   "${NAME_PREFIX}-payment-asg"

@@ -56,7 +56,7 @@ COGNITO_HOSTED_UI_URL=${cognito_hosted_ui_url}
 APP_BASE_URL=${app_base_url}
 CLOUDWATCH_LOG_GROUP=/finpay/${name_prefix}/${service_key}
 CLOUDWATCH_LOG_STREAM=${service_key}-asg
-PYTHONPATH=/opt/finpay-real/vendor
+PYTHONPATH=/opt/finpay-real:/opt/finpay-real/vendor
 ENV
 
 cat >/etc/systemd/system/finpay-real.service <<'UNIT'
