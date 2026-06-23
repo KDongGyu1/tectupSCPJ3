@@ -20,6 +20,21 @@ variable "cloudfront_acm_certificate_arn" { type = string }
 variable "cloudfront_origin_domain_name" { type = string }
 variable "enable_cloudfront_standard_logs" { type = bool }
 variable "enable_cloudfront_connection_logs" { type = bool }
+variable "app_cloudwatch_log_retention_days" { type = number }
+variable "log_lifecycle_transition_ia_days" { type = number }
+variable "log_lifecycle_transition_glacier_days" { type = number }
+variable "alb_log_lifecycle_expiration_days" {
+  description = "Days before ALB access log objects expire."
+  type        = number
+  default     = 365
+
+  validation {
+    condition     = contains([365, 730], var.alb_log_lifecycle_expiration_days)
+    error_message = "alb_log_lifecycle_expiration_days must be either 365 or 730."
+  }
+}
+variable "cloudfront_standard_log_lifecycle_expiration_days" { type = number }
+variable "cloudfront_connection_log_lifecycle_expiration_days" { type = number }
 variable "enable_cloudfront_viewer_mtls" { type = bool }
 variable "cloudfront_viewer_mtls_mode" { type = string }
 variable "cloudfront_viewer_mtls_ca_bundle_path" { type = string }

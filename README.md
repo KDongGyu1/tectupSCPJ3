@@ -463,7 +463,16 @@ aws events list-targets-by-rule --rule "$RULE_NAME" --region ap-northeast-2
 aws sns list-subscriptions --region ap-northeast-2
 ```
 
+## 시연 시나리오
 
+발표 시연은 다음 흐름을 권장합니다.
+
+1. 정상 HTTPS `/health` 요청 성공 확인
+2. 클라이언트 인증서 없는 mTLS 요청 실패 확인
+3. CloudFront Connection Log에서 `Failed:ClientCertMissing` 확인
+4. CloudFront Standard Access Log에서 정상 요청 `200` 확인
+5. `curl -I`로 Secure Cookie, HSTS, CSP 등 보안 헤더 확인
+6. EventBridge + SNS 기반 보안 이벤트 탐지·알림 구조 설명
 
 ## 전자금융 관련 규정 대응 관점
 
@@ -476,9 +485,24 @@ aws sns list-subscriptions --region ap-northeast-2
 | 이상 이벤트 대응 | EventBridge Rule, SNS 알림, Runbook 기반 확인 및 조치 |
 | 백업 및 보관 | AWS Backup, S3 로그 보관, Lifecycle/Object Lock 선택 구성 |
 
+## 향후 개선 과제
+
+- ALB -> App 구간 HTTPS 또는 mTLS 운영 적용 검토
+- CloudFront WAF 별도 적용 및 `us-east-1` WebACL 운영 정책 수립
+- WAF Rate Rule의 `count` -> `block` 전환 기준 수립
+- VPC Endpoint Policy를 리소스 ARN과 Action 기준으로 세분화
+- ACM 인증서 발급·갱신 자동화와 만료 알림 고도화
+- KMS Key Rotation 운영 자동화
+- Security Hub, GuardDuty, AWS Config 활성화 후 Findings 통합 관제 확장
+- SIEM 대시보드 연동 및 인시던트 리포트 자동화
 
 ## 주의 사항
 
 - `terraform.tfvars`에는 계정 정보, 인증서 ARN, 이메일, 도메인 등 환경별 값이 포함될 수 있으므로 커밋하지 않습니다.
+- GuardDuty, Security Hub, AWS Config는 기본값이 비활성화되어 있습니다. 발표와 문서에서는 실제 활성화 증적이 있는 항목과 향후 과제를 분리해야 합니다.
+- `End-to-End 암호화` 표현은 ALB -> App 구간까지 HTTPS/mTLS가 적용된 경우에만 사용합니다. 현재 기본 구성에서는 주요 외부 전송 구간 암호화 강화로 표현합니다.
+- CloudFront Viewer mTLS는 CloudFront, Trust Store, 인증서, 로그 설정이 모두 맞아야 검증 가능합니다.
 
+## 라이선스 및 사용 범위
 
+이 저장소는 교육용 보안 아키텍처 실습과 프로젝트 발표를 위한 예제입니다. 실제 운영 환경에 적용할 때는 조직의 보안 정책, 비용 정책, 개인정보 처리 기준, 인증서 관리 기준, 규제 요구사항을 별도로 검토해야 합니다.

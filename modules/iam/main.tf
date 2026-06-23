@@ -45,6 +45,18 @@ resource "aws_iam_role_policy" "app_runtime" {
           "s3:GetObject"
         ]
         Resource = "arn:aws:s3:::${var.name_prefix}-tfstate-${var.account_id}/tmp/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = "arn:aws:s3:::${var.name_prefix}-tfstate-${var.account_id}"
+        Condition = {
+          StringLike = {
+            "s3:prefix" = "tmp/*"
+          }
+        }
       }
     ]
   })
@@ -122,4 +134,3 @@ resource "aws_iam_role_policy" "auditor_logs" {
     }]
   })
 }
-
